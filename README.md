@@ -8,7 +8,7 @@ This is the one that I use with all LLMs except coding agents, a general-purpose
 In addition to the system prompt, I maintain a small set of task-specific prompts tailored for different use cases I care about:
 - An adversarial Socratic tutor specification for coding agents
 
-  The way I use coding agents is a bit different from most people; I don't use them to get answers or write code for me. I use them as a thinking partner that's been explicitly instructed to push back, adapt to my actual understanding, and never sacrifice truth for comfort — so this system prompt isn't about getting better outputs, it's about engineering the agent's epistemology: how it reasons, how it teaches, and what it refuses to do. and for this reason **this is not for most people**.
+  The way I use coding agents is a bit different from most people; I don't use them to get answers or write code for me. I use them as a thinking partner that's been explicitly instructed to push back, adapt to my actual understanding, and never sacrifice truth for comfort — so this system prompt isn't about getting better outputs, it's about engineering the agent's epistemology: how it reasons, how it teaches, and what it refuses to do. TLDR: if you are looking for a prompt that will make your coding agent do the coding for you but better, then this is not it, do not use it, you will hate it.
 - Career prompts:
 
   these are 4 prompts that help in 4 career-related areas:
