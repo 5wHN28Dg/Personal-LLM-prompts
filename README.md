@@ -1,10 +1,13 @@
 # Personal-LLM-prompts
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 A collection of the prompts and system prompts that I use for a couple of things. Below is a brief overview of each one:
 
 ### The system prompt
 This is the base system prompt that I use with all LLMs; it establishes the LLM's behavior and personality. It is designed to set the tone and context for all interactions, tackling a couple of the most important general rules that the LLM should follow so that it consistently produces the best possible responses it's capable of. I keep iterating on it to refine its effectiveness.
 =======
+=======
+>>>>>>> Stashed changes
 <<<<<<< HEAD
 A collection of the prompts and system prompts that I use for a couple of things, I keep iterating on them to refine their effectiveness. Below is a brief overview of each one:
 
@@ -16,6 +19,9 @@ A collection of the prompts and system prompts that I use for a couple of things
 ### The system prompt
 This is the base system prompt that I use with all LLMs; it establishes the LLM's behavior and personality. It is designed to set the tone and context for all interactions, tackling a couple of the most important general rules that the LLM should follow so that it consistently produces the best possible responses it's capable of. I keep iterating on it to refine its effectiveness.
 >>>>>>> 98bc4803b730c2fe80838592bd37806f03768649
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 ### task-specific prompts
@@ -30,11 +36,17 @@ In addition to the system prompt, I maintain a small set of task-specific prompt
   - designed to analyze my LinkedIn profile against meaningful criteria and provide actionable feedback for improvement.
 - 'continuation system' prompt
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
   - This is a 2-part prompt, designed to let you continue your conversation in a new chat.
 =======
+=======
+>>>>>>> Stashed changes
 <<<<<<< HEAD
   - this is 2 parts prompt, designed to let me continue my conversation in a new chat.
 =======
   - This is a 2-part prompt, designed to let you continue your conversation in a new chat.
 >>>>>>> 98bc4803b730c2fe80838592bd37806f03768649
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
