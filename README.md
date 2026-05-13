@@ -1,33 +1,13 @@
 # Personal-LLM-prompts
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-A collection of the prompts and system prompts that I use for a couple of things. Below is a brief overview of each one:
+A collection of the prompts and system prompts that I use for a couple of things. I keep iterating on them to refine their effectiveness. Below is a brief overview of each one:
 
 ### The system prompt
-This is the base system prompt that I use with all LLMs; it establishes the LLM's behavior and personality. It is designed to set the tone and context for all interactions, tackling a couple of the most important general rules that the LLM should follow so that it consistently produces the best possible responses it's capable of. I keep iterating on it to refine its effectiveness.
-=======
-=======
->>>>>>> Stashed changes
-<<<<<<< HEAD
-A collection of the prompts and system prompts that I use for a couple of things, I keep iterating on them to refine their effectiveness. Below is a brief overview of each one:
-
-### the system prompt
-this is the base system prompt that I use with all LLMs except coding agents, it establishes the LLM's behavior and personality, it is designed to set the tone and context for all interactions, tackling a couple of the most important general rules that the LLM should follow so that it consistently produces the best possible responses its capable of.
-=======
-A collection of the prompts and system prompts that I use for a couple of things. Below is a brief overview of each one:
-
-### The system prompt
-This is the base system prompt that I use with all LLMs; it establishes the LLM's behavior and personality. It is designed to set the tone and context for all interactions, tackling a couple of the most important general rules that the LLM should follow so that it consistently produces the best possible responses it's capable of. I keep iterating on it to refine its effectiveness.
->>>>>>> 98bc4803b730c2fe80838592bd37806f03768649
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
+This is the one that I use with all LLMs except coding agents, a general-purpose epistemic standards prompt — it doesn't teach, it consults. It configures the LLM to reason without flattery, acknowledge uncertainty explicitly, and always surface the criteria behind any judgment so the reasoning can be verified, not just trusted.
 
 ### task-specific prompts
 In addition to the system prompt, I maintain a small set of task-specific prompts tailored for different use cases I care about:
-- learning-focused system prompt for coding agents
-  - The way I use coding agents is a bit different from most people; I don't use coding agents to get answers or write for me. I use them as a thinking partner that's been explicitly instructed to push back, adapt to my actual understanding, and never sacrifice truth for comfort.
+- An adversarial Socratic tutor specification for coding agents
+  - The way I use coding agents is a bit different from most people; I don't use coding agents to get answers or write for me. I use them as a thinking partner that's been explicitly instructed to push back, adapt to my actual understanding, and never sacrifice truth for comfort — so this system prompt isn't about getting better outputs, it's about engineering the agent's epistemology: how it reasons, how it teaches, and what it refuses to do.
 - Master CV creation prompt
   - designed to create me a master CV from a messy, unstructured input.
 - job-fit assessment and resume tailoring prompt
@@ -35,18 +15,4 @@ In addition to the system prompt, I maintain a small set of task-specific prompt
 - LinkedIn profile evaluation prompt
   - designed to analyze my LinkedIn profile against meaningful criteria and provide actionable feedback for improvement.
 - 'continuation system' prompt
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-  - This is a 2-part prompt, designed to let you continue your conversation in a new chat.
-=======
-=======
->>>>>>> Stashed changes
-<<<<<<< HEAD
-  - this is 2 parts prompt, designed to let me continue my conversation in a new chat.
-=======
-  - This is a 2-part prompt, designed to let you continue your conversation in a new chat.
->>>>>>> 98bc4803b730c2fe80838592bd37806f03768649
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
+  - This is a 2-part prompt, designed to let me continue my conversation in a new chat.
