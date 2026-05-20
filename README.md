@@ -23,13 +23,13 @@ In addition to the system prompt, I maintain a small set of task-specific prompt
     designed to craft a compelling cover letter and professional email communication based on the tailored resume and job description analysis from Prompt 2.
   - LinkedIn profile evaluation prompt
   
-    designed to analyze my LinkedIn profile against meaningful criteria and provide actionable feedback for improvement. (haven't used it yet)
+    designed to analyze my LinkedIn profile against meaningful criteria and provide actionable feedback for improvement.
 - 'continuation system' prompts
 
   These are 2 prompts designed to let me continue my conversation in a new chat.
-  - Part 1: Context extraction prompt
+  - Prompt 1: Context extraction prompt
   
     designed to analyze the current chat history and extract the essential context needed to continue the conversation when transitioning to a new session.
-  - Part 2: Conversation continuation prompt
+  - Prompt 2: Conversation continuation prompt
   
-    designed to take the extracted context from Part 1 and resume the conversation seamlessly in a new chat environment, maintaining coherence and continuity.
+    designed to take the extracted context from Prompt 1 and resume the conversation seamlessly in a new chat environment, maintaining coherence and continuity.

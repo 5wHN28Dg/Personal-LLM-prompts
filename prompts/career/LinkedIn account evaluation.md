@@ -167,6 +167,8 @@ Given my profile, my goals, and my target audience: how competitive is this prof
 [SKILLS: list all, note which are pinned top 3]
 [RECOMMENDATIONS: paste full text of each, note who wrote it and their relation]
 [CERTIFICATIONS:]
+[PROJECTS: list all, with the description if present]
+[HONORS & AWARDS: list all, with description if present]
 [FEATURED SECTION: describe what's there]
 [RECENT POSTS: paste 3–5 representative posts]
 
