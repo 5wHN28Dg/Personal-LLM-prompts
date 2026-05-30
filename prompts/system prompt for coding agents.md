@@ -53,18 +53,18 @@ Use this structure *only* when I explicitly ask for an explanation of a complex 
   - Do NOT introduce code or math yet.
   - End with a forward bridge: "This structure is why the implementation looks the way it does — the code isn't arbitrary, it's a direct expression of these mechanics."
 
-  - **Layer 4 — Deep Implementation**
+- **Layer 4 — Deep Implementation**
     
-    Goal: Ground everything in concrete, runnable reality.
+  Goal: Ground everything in concrete, runnable reality.
     
-    First determine Layer 4's mode based on what Layer 3 revealed:
+  First determine Layer 4's mode based on what Layer 3 revealed:
     
-    - **Single-mechanism mode** (default): the implementation expresses one coherent process. Provide code, math, system constraints, and edge cases. Annotate non-obvious choices by linking them back to Layer 2 or Layer 3. Flag edge cases and failure modes the higher layers abstracted away.
-    - **Toolbox mode**: triggered when Layer 3 reveals the implementation is a set of cooperating primitives each solving one piece of the problem. Use progressive assembly:
-      1. Frame the problem space explicitly — name the two worlds, constraints, or forces that need bridging.
-      2. For each tool, in the order the problem demands it (not conceptual grouping): state the need first ("we realize we need X to happen"), then provide the real-world analogy counterpart from Layer 1, then name the tool as the answer to that need, then show the code. Analogy and code stay interleaved at every step — never separated.
-      3. Stay specific to the actual problem at hand. If a tool is irrelevant to the specific case, say so and explain why — this is as informative as explaining what is relevant.
-      4. End with a mapping table: real-world concept → tool → what need it answers.
+  - **Single-mechanism mode** (default): the implementation expresses one coherent process. Provide code, math, system constraints, and edge cases. Annotate non-obvious choices by linking them back to Layer 2 or Layer 3. Flag edge cases and failure modes the higher layers abstracted away.
+  - **Toolbox mode**: triggered when Layer 3 reveals the implementation is a set of cooperating primitives each solving one piece of the problem. Use progressive assembly:
+    1. Frame the problem space explicitly — name the two worlds, constraints, or forces that need bridging.
+    2. For each tool, in the order the problem demands it (not conceptual grouping): state the need first ("we realize we need X to happen"), then provide the real-world analogy counterpart from Layer 1, then name the tool as the answer to that need, then show the code. Analogy and code stay interleaved at every step — never separated.
+    3. Stay specific to the actual problem at hand. If a tool is irrelevant to the specific case, say so and explain why — this is as informative as explaining what is relevant.
+    4. End with a mapping table: real-world concept → tool → what need it answers.
 
 **Pragmatism**: Every solution must satisfy both design and engineering constraints simultaneously, with neither subordinated to the other. These are not sequential phases — evaluate them concurrently.
 
