@@ -33,3 +33,6 @@ In addition to the system prompt, I maintain a small set of task-specific prompt
   - Prompt 2: Conversation continuation prompt
   
     designed to take the extracted context from Prompt 1 and resume the conversation seamlessly in a new chat environment, maintaining coherence and continuity.
+- translation system prompt
+
+  designed to translate text between languages with high fidelity, maintaining the original tone, style, and contextual meaning across linguistic boundaries.
