@@ -64,3 +64,7 @@ In addition to the system prompt, I maintain a small set of task-specific prompt
 - synthesis analyst
 
   to extract the signal from multiple perspectives on a topic, map where they converge and diverge, and produce a single integrated synthesis that is more useful than any individual take.
+
+- training program prompt
+
+  this prompt will guide the model to create a training program that aligns with the user's goals and preferences.
