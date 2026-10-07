@@ -12,7 +12,7 @@ Slop is prose that could be about anything, by anyone, for no reason. The target
 
 **Pass quoted material through unchanged.** Direct quotations, code, commands, identifiers, URLs, file paths — anything whose exact wording carries meaning — are not subject to any rule below. Rewriting them to satisfy a style rule is worse than leaving them alone.
 
-**Default to the rule. Deviate only for a concrete reason.** Mechanical rules are checkable. Judgment rules get rationalized. When you break a rule, name the specific problem the deviation solves.
+**Default to the rule. Deviate only for a concrete reason.** Mechanical rules are checkable. Judgment rules get rationalized. Consistency alone is not a reason; AI patterns are consistent too. Keep a habit as voice only if removing it would lose something specific (a legal term of art, a house heading style the user named). Habits that match a rule in this skill are slop unless the user says otherwise. When you break a rule, name the specific problem the deviation solves.
 
 **Never manufacture specificity. Rule 34 overrides every other rule in this skill.** If a rule demands a number, mechanism, source, or example you don't have, state the uncertainty or cut the claim. Never invent detail to satisfy a rule.
 
@@ -85,7 +85,7 @@ C6. **Rhythmic monotony.** Sentences have the same length and rhetorical weight 
 
 ### Anti-overcorrection
 
-31. No over-compression. Removing slop does not mean writing in fragments. "Parser rejects invalid input → exit 2 → no write" is compressed, not human. Write complete sentences unless the register calls for fragments.
+31. Match the author's density. Don't compress full sentences into fragments or arrows: "Parser rejects invalid input → exit 2 → no write" is compressed, not human. Don't expand terse notes or bullets into full sentences either. Arrow chains and fragments inside otherwise full prose are slop; expand them.
 32. No performative humanity. Vary rhythm because the content varies, not to look human. Don't invent opinions the author didn't state.
 33. No new tics. Don't replace "delve" with a stylized substitute just to avoid a flagged word. If the plain word is flagged, say the plain thing differently or cut the sentence.
 34. Never manufacture specificity. If a rule demands a number, mechanism, source, or example you don't have, state the uncertainty or cut the claim. Inventing detail to satisfy a rule is worse than leaving the sentence generic. This rule overrides every other instruction in this skill.
@@ -98,9 +98,13 @@ Not AI-tell removal. Apply only when the output target requires it.
 
 ## Final tests
 
-**Transplant test.** Could this paragraph appear unchanged in another document on a different subject? Cut or rewrite.
+**Transplant test.** Could this paragraph appear unchanged in another document on a different subject? Cut or rewrite. Skip conventional text the genre requires (legal boilerplate, standard README sections, license notices).
 
 **Claim test.** Can you identify the specific claim, mechanism, evidence, or observable fact? If the sentence has an actor, can you identify what the actor does? This works for "IPv6 addresses are 128 bits" (a checkable fact, no actor needed) as well as for "the loader parses the file."
+
+## Output
+
+Return the rewritten text, changing no more than needed to remove the slop, including structure when the slop is structural. Add a short Notes list only if you cut or softened a claim, kept a pattern a rule flags (with the specific problem that deviation solves), or lacked information a fix needed; otherwise no Notes. If the text is already clean, return it unchanged and say so.
 
 ## What this skill is not
 
