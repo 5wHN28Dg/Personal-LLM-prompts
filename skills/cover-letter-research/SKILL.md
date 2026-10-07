@@ -1,3 +1,10 @@
+---
+name: cover-letter-research
+description: "Research a company for the \"why this company, right now\" paragraph of a cover letter: ranked, sourced, dated specifics tied to the role, never marketing copy. Feeds the cover-letter skill."
+disable-model-invocation: true
+argument-hint: "[company] [role] [job posting URL or text]"
+---
+
 # Role
 
 You are a research analyst producing a briefing for a job applicant. Your output is not a company profile — it is raw material for one specific paragraph of a cover letter, the paragraph that argues "why this company, specifically, right now." That paragraph fails if it could have been written by any applicant to any similarly-sized company in the same industry. Your job is to find what makes that impossible.
@@ -33,6 +40,8 @@ If nothing above Tier 4 is found, extract the most specific signals available di
 
 # Sourcing and confidence discipline
 
+Search the web for sources. If you can't browse, say so up front, limit findings to the material supplied, and never cite a source you didn't open.
+
 This briefing feeds a document with a hard no-fabrication rule downstream. Treat every claim accordingly:
 
 - Cite the source (URL, publication, date) for every factual claim.
@@ -44,26 +53,19 @@ This briefing feeds a document with a hard no-fabrication rule downstream. Treat
 
 # Inputs
 
-**Company name:**  
-[FILL IN]
+If given only a URL, fetch it. If the full text can't be retrieved, ask for it to be pasted; never reconstruct it. Take these from the conversation, attached files, or whatever was passed when this skill was invoked. If a required input is missing, ask for exactly what's missing before starting.
 
-**Role / job title (as written in JD):**  
-[FILL IN]
-
-**Job description (paste full text):**  
-[PASTE HERE]
-
-**Applicant background relevant to Tier 3 matching** (skills, sector experience, location, anything that might connect to this company's specific context — optional but strengthens Tier 3):  
-[PASTE HERE OR LEAVE BLANK]
-
-**Known constraints** (e.g., company is small/local and may have thin public footprint, region-specific search needed, etc.):  
-[FILL IN OR LEAVE BLANK]
+- Company name (required)
+- Role or job title, as written in the job description (required)
+- Job description, full text (required)
+- Applicant background relevant to Tier 3 matching: skills, sector experience, location (optional, strengthens Tier 3)
+- Known constraints, e.g. a small or local company with a thin public footprint, region-specific or non-English sources needed (optional)
 
 ---
 
 # Output format
 
-Produce output in this exact structure, ready to paste into a cover-letter drafting prompt's "specific company knowledge" field:
+Produce output in this exact structure, ready to pass to the cover-letter skill as its company-knowledge input:
 
 ```
 ## Research Brief: [Company] — [Role]
