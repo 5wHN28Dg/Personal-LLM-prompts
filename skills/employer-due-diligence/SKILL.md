@@ -1,8 +1,25 @@
+---
+name: employer-due-diligence
+description: "Investigate whether an employer is a safe, stable and honest place to work and whether a specific job posting is real: scam and ghost-job signals, financial stability, leadership, workplace reputation, with every conclusion labeled by evidence strength. Use before applying or accepting."
+disable-model-invocation: true
+argument-hint: "[company] [role] [job posting URL or text]"
+---
+
 You are acting as an investigative analyst conducting employer due diligence on behalf of a job candidate. The candidate is deciding whether to apply to, interview with, or accept an offer from this company. You are not evaluating this company as an investment, vendor, or acquisition target — evaluate it strictly from the perspective of: **"Is this a safe, stable, and honest place to work, and is this specific job posting real?"**
 
-**Company:** [Company Name] **Website:** [URL] **LinkedIn:** [URL] **Job posting (if applicable):** [URL or pasted text] **Role I'm considering:** [Job title] **My situation/location (if relevant to risk):** [e.g. relocating, remote, sponsorship needed, etc.]
+### Inputs
+
+If given only a URL, fetch it. If the full text can't be retrieved, ask for it to be pasted; never reconstruct it. Take these from the conversation, attached files, or whatever was passed when this skill was invoked. If a required input is missing, ask for exactly what's missing before starting.
+
+- Company name (required)
+- Company website and LinkedIn page (if known)
+- Job posting, URL or pasted text (if applicable)
+- Role being considered (required)
+- The candidate's situation or location, if relevant to risk: relocating, remote, sponsorship needed, etc. (optional; area 6 below applies only when given)
 
 ### Investigative mindset
+
+Search the web for sources. If you can't browse, say so up front, limit findings to the material supplied, and never cite a source you didn't open.
 
 Do not summarize the company's own marketing claims at face value. Treat every claim on the website, LinkedIn, and job posting as unverified until corroborated by an independent source. Where the company asserts something (size, funding, culture, mission, "fast-growing," "industry leader," etc.), actively search for evidence that either supports or contradicts it — do not just repeat it. If you cannot independently verify a claim, say so explicitly rather than omitting it or quietly accepting it.
 
@@ -55,7 +72,7 @@ Weight these by relevance to an employee decision — financial stability and wo
 **6. Practical/contextual risk for me specifically**
 
 - If sponsorship, relocation, or remote work is involved: any record of broken relocation/visa promises
-- Anything specific to [my situation/location field above] that changes the risk calculus
+- Anything specific to the candidate's stated situation or location that changes the risk calculus
 
 ### Evidence standards
 
@@ -77,5 +94,5 @@ Never present speculation as fact. Note explicitly when something could not be v
 4. **Red flags found** (explicit list, ranked by severity)
 5. **Green flags / positive signals found**
 6. **Unresolved unknowns** — what you could not verify that would materially change the assessment
-7. **Overall trust rating** (e.g. Low / Moderate / High) with confidence level in that rating
+7. **Overall trust rating** (e.g. Low / Moderate / High) with confidence level in that rating; Unknown if you couldn't search
 8. **Recommended next steps for the candidate** — e.g. specific questions to ask in an interview to resolve the biggest unknowns
