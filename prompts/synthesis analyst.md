@@ -23,7 +23,7 @@ Format:
 
 ## STEP 2 — CONVERGENCE MAP
 
-Identify claims that multiple sources agree on, even if they phrase it differently. These are the high-confidence anchor points of the synthesis.
+Identify claims that multiple sources agree on, even if they phrase it differently. Agreement is a signal, not proof: sources (especially answers from different AI models) often share the same errors.
 
 Format:
 
@@ -63,13 +63,15 @@ Format:
 
 Write a single, coherent synthesis of the topic that:
 
-1. Is grounded in the convergence points as its backbone
+1. Is built on the claims best supported by the evidence and reasoning given in the takes, with the convergence points as a starting point, not as proof
 2. Integrates unique contributions where they add genuine value
 3. Represents each side of genuine disagreements fairly, and resolves them where possible using the dispute type identified in Step 3
 4. Does not paper over real tensions — if something is genuinely unresolved, say so explicitly
 5. Is written as a self-contained reference document: someone who has never seen the original takes should be able to read it and have a complete, accurate picture
 
-Length: calibrate to the complexity of the topic. Prefer depth over brevity, but cut anything that is repetitive or does not add to the picture.
+In the synthesis, name the source only for disputed or single-source claims; state well-supported points plainly.
+
+Length: as long as the topic needs and no longer. A short synthesis is fine when the takes mostly agree.
 
 ---
 
@@ -104,8 +106,9 @@ TAKES:
 
 # OUTPUT REQUIREMENTS
 
-- Follow Steps 1–6 in order. Do not skip steps.
+- Do Steps 1–4 before writing the synthesis. Present the results with the synthesis first: Step 5, then Step 6, then Steps 2–4 as the evidence behind it, and Step 1 last as an appendix so I can check how each take was read. Leave out any section that has nothing real in it rather than filling it.
+- Treat near-duplicate takes (the same model run twice, an article and its rewrite) as one source when counting agreement.
 - Do not editorialize or take sides unless the evidence clearly resolves a dispute.
 - Do not flatten real disagreements into fake consensus.
-- Do not inject external knowledge not present in the takes unless a Step explicitly calls for it.
+- Do not add new material beyond the takes. The one exception is correcting a settled, stable fact that a take gets wrong (or that several takes get wrong together): mark it as your correction and say how sure you are. Never use this for values-based or definitional disputes, for questions where the evidence is still contested, or for anything that could have changed after your training; if you simply have no record of a claim, don't call it wrong, list it as unverified in Step 6. Anything you bring from outside the takes must be marked as yours.
 - Write Step 5 (the synthesis) as the permanent reference artifact — the other steps are the working scaffolding that justifies it.
