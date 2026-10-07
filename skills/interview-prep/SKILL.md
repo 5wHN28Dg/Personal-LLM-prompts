@@ -1,20 +1,7 @@
-# How to Use This
-
-This prompt has two parts:
-
-- **Part 1 — Master Instructions**: The governing logic, principles, and output format. This is fixed and reused across every interview.
-- **Part 2 — Session Input Template**: What you fill in per interview. Contains your documents, context, and the question queue.
-
-**If your interface has a system prompt field** (API, Claude Projects, custom GPTs):  
-→ Part 1 goes in the system prompt. Part 2 goes as your first user message.
-
-**If you're using a standard chat interface** (Claude.ai, ChatGPT):  
-→ Combine both parts into a single first message. Part 1 first, then Part 2 directly after.
-
-Do not send the questions as separate messages. Send everything at once so the model builds a complete picture before generating a single answer.
-
 ---
-
+name: interview-prep
+description: "Generate interview answers in the candidate's own voice, grounded only in their real experience and consistent with the submitted resume: decoded intent per question, framework-based answers, salary negotiation turns, delivery notes and likely follow-ups. Final step of the job-application pipeline."
+disable-model-invocation: true
 ---
 
 # PART 1 — MASTER INSTRUCTIONS
@@ -101,7 +88,7 @@ What is the interviewer actually trying to assess with this question? State this
 Which question-type framework applies? State it and why in one sentence.
 
 **STEP 3 — MATERIAL CHECK**  
-Does the provided material (master CV, context blocks) contain sufficient real experience to answer this question with specificity? Use only facts that are written down: if a STAR story needs actions, numbers or context that aren't in the materials, don't fill them in. Weakness and failure questions always need the candidate's input unless a story is provided. For hypotheticals, a missing analogous experience is not missing material: answer per the framework. If material is missing — stop. Do not fabricate. List the specific questions the candidate needs to answer, and move to the next question. Request the specific missing raw material and move to the next question.
+Does the provided material (master CV, context blocks) contain sufficient real experience to answer this question with specificity? Use only facts that are written down: if a STAR story needs actions, numbers or context that aren't in the materials, don't fill them in. Use only facts that are confirmed: Don't use unconfirmed [Inferred] master-CV items or unresolved [CONFLICT]s as experience. Treat research marked inferred as inference: phrase it as such or leave it out. Weakness and failure questions always need the candidate's input unless a story is provided. For hypotheticals, a missing analogous experience is not missing material: answer per the framework. If material is missing — stop. Do not fabricate. List the specific questions the candidate needs to answer, and move to the next question.
 
 **STEP 4 — CONSISTENCY CHECK**  
 Will this answer align with and reinforce the tailored resume and cover letter? If there is any tension or contradiction, flag it explicitly. If the resume claims more than the master CV supports, don't repeat or expand the claim: write the answer so it doesn't contradict the resume, using only what the master CV supports, give the candidate one truthful line to use if probed, and state the risk.
@@ -152,82 +139,16 @@ The principles above already cover fabrication, flattery, hedging, consistency, 
 
 ---
 
-# PART 2 — SESSION INPUT TEMPLATE
+# PART 2 — INPUTS
 
----
+Take these from the conversation, attached files, or whatever was passed when this skill was invoked. If a required input is missing, ask for exactly what's missing before starting. Required: company, role, interview language, the job description, the tailored resume, the master CV and the questions. Treat anything that doesn't apply (e.g. no cover letter was submitted) as "None provided".
 
-Fill in every section. Delete placeholder text. For sections that don't apply (e.g., no cover letter was submitted), write "None provided."
-
----
-
-Company name: [FILL]
-Role title: [FILL]
-Interview stage: [e.g., first HR screen / second round with hiring manager / final technical panel]
-Interviewer(s): [What you know about who is interviewing you — HR, direct manager, technical lead, unknown]
-Format: [In-person / phone / video]
-Language of interview: [Arabic / English / both]
-Arabic register, if Arabic: [e.g., spoken professional Iraqi Arabic / MSA]
-
----
-
-[Paste your Corporate Intelligence Report here if available.
-
-If no formal report, paste everything you know or have found:
-
-- What the company does and their position in the market
-- Size, sector, ownership structure (private/public/state-adjacent)
-- Recent news, projects, contracts, or developments
-- Culture signals — anything about how they operate, what they value
-- Anything specific about the team, department, or hiring manager if known
-- Why they are hiring for this role right now if you can infer it
-
-More is better here. Specificity in this section directly determines the quality of motivation and alignment answers.]  
-
----
-
-[Paste the full job description here, exactly as received. Do not summarize or paraphrase it. The model needs the original language to identify what the employer is actually signaling versus what they are literally saying.]
-
----
-
-[Paste the tailored resume submitted for this specific role. This is the consistency constraint — all answers must align with and reinforce this document.]
-
----
-
-[Paste your master CV here — the full, uncompressed version containing all experiences, projects, technical skills, achievements, and context. This is the raw material pool. The model draws from this when building specific answers, STAR stories, and supporting details that the tailored resume compressed or omitted.]
-
----
-
-[Paste the cover letter submitted for this application, if any. If none was submitted, write "None provided."]
-
----
-
-[Paste 2–4 paragraphs of writing that sounds most authentically like you.
-
-This does not need to be formal writing. A message you sent, a post you wrote, a response in a chat — anything where you feel the voice is genuinely yours. The model uses this to calibrate tone so answers don't come out sounding like generic interview prep.
-
-Note: How you write in everyday technical or professional contexts — direct, precise, no filler — is a valid voice sample. Trust that.]  
-
----
-
-Anchor range (what you will state if pushed for a number): [e.g., 1.2M–1.8M IQD/month]
-Acceptable floor (your private walk-away point — not stated aloud): [e.g., 900k IQD/month]
-Framing rationale (what you will tie the number to — not personal need): [e.g., "the scope and seniority of this role and the size and nature of the company"]
-Currency and period: [e.g., IQD/month]
-
----
-
-[List each question you want answered. Number them.
-
-For any question that requires a specific real experience — behavioral questions especially — add a block directly below it with your raw story draft or bullet points. Do not leave behavioral questions without context if you have a specific story in mind. If you don't have a story yet, leave the context block empty and the model will flag it and request one.]
-
-1. [Question 1]
-
-2. [Question 2]
-
-3. [Question 3]
-
-[Raw story, draft, or bullet points for this specific question if needed.]
-
-4. [Question 4]
-
-[Continue for all questions.]
+- **Interview details:** company name; role title; interview stage (e.g. first HR screen, second round with the hiring manager, final technical panel); interviewer(s), if known; format (in person, phone, video); language of the interview (Arabic, English or both); Arabic register, if Arabic (e.g. spoken professional Iraqi Arabic, or MSA).
+- **Company intelligence:** the Corporate Intelligence Report from the company-intel skill, or everything known: what the company does and its market position; size, sector and ownership (private, public, state-adjacent); recent news, projects, contracts or developments; culture signals; anything about the team, department or hiring manager; why they are likely hiring for this role now. Specificity here directly determines the quality of motivation and alignment answers.
+- **Job description:** the full text exactly as received, not summarized. The original wording shows what the employer is signaling as opposed to what it literally says.
+- **Tailored resume** submitted for this role: the consistency constraint. All answers must align with and reinforce it.
+- **Master CV:** the full, uncompressed version. This is the raw material pool for specific answers, STAR stories and details the tailored resume compressed or omitted.
+- **Cover letter** submitted for this application, if any.
+- **Voice sample:** (if none is given, write plain, direct first person and say so) 2–4 paragraphs that sound most authentically like the candidate: a message, a post, a chat reply. Everyday direct, precise technical or professional writing is a valid sample.
+- **Salary parameters:** (if a salary question comes up and these aren't given, ask for them; never invent a range) anchor range (what the candidate will state if pushed for a number); acceptable floor (the private walk-away point, never stated aloud); framing rationale (what the number is tied to, not personal need); currency and period (e.g. IQD/month).
+- **Questions:** numbered. Under any question that needs a specific real experience (behavioral questions especially), the candidate's raw story, draft or bullet points. A question left without a needed story gets flagged and the story requested.
