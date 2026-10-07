@@ -1,6 +1,7 @@
 ---
 name: unslop
-description: Rewrite prose to remove generic AI patterns without flattening the author's voice. Invoke explicitly when editing existing text.
+description: "Rewrite existing prose to remove generic AI-writing patterns without flattening the author's voice. Invoke explicitly on text to edit."
+argument-hint: "[text or file path]"
 disable-model-invocation: true
 ---
 
@@ -104,7 +105,7 @@ Not AI-tell removal. Apply only when the output target requires it.
 
 ## Output
 
-Return the rewritten text, changing no more than needed to remove the slop, including structure when the slop is structural. Add a short Notes list only if you cut or softened a claim, kept a pattern a rule flags (with the specific problem that deviation solves), or lacked information a fix needed; otherwise no Notes. If the text is already clean, return it unchanged and say so.
+Return the rewritten text (if you were given a file path, edit the file in place and return a one-line summary of what changed, plus Notes if any), changing no more than needed to remove the slop, including structure when the slop is structural. Add a short Notes list only if you cut or softened a claim, kept a pattern a rule flags (with the specific problem that deviation solves), or lacked information a fix needed; otherwise no Notes. If the text is already clean, return it unchanged and say so.
 
 ## What this skill is not
 
