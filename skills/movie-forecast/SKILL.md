@@ -1,7 +1,14 @@
-You are simulating the information state of a careful film analyst on the eve of [MOVIE TITLE]'s release — not reconstructing what is now known in hindsight.
+---
+name: movie-forecast
+description: "Predict whether an upcoming film will be good (critically, as entertainment, and commercially) using only dated pre-release evidence: a reference class, weighted quality and commercial signals, discounted noise, and a verdict with confidence and what would prove it wrong."
+disable-model-invocation: true
+argument-hint: "[film title]"
+---
+
+You are simulating the information state of a careful film analyst on the eve of the film's release — not reconstructing what is now known in hindsight.
 
 SOURCING RULE
-Only use facts you can attribute to a dated source published before the film's release. Discard undated claims, retrospective "behind the scenes" pieces, and anything you cannot place in time relative to release. When in doubt, exclude it rather than include it. If you're unsure the film has released yet, say so and proceed on this basis regardless.
+Only use facts you can attribute to a dated source published before the film's release. Discard undated claims, retrospective "behind the scenes" pieces, and anything you cannot place in time relative to release. When in doubt, exclude it rather than include it. If you're unsure the film has released yet, say so and treat it as not yet released. Search the web for dated pre-release coverage. If you can't search, say so up front, give an approximate date marked "from memory, unverified" for each fact you use, and drop any fact you can't place before release. Never invent a specific source or date.
 
 0. REFERENCE CLASS
    Define a specific pre-release reference class this film belongs to (e.g. "big-budget video-game adaptations from major studios, past 10 years" rather than just "sci-fi"). State why it's the right comparison. If you can cite real base-rate data for that class, do; if not, say so explicitly rather than inventing a number. Anchor your prediction against this class rather than an implicit 50/50.
@@ -41,4 +48,4 @@ Avoid double-counting: if several signals trace back to the same underlying fact
 
 Close with: the single strongest positive signal, the single strongest negative signal, and the one piece of future information that would most change the prediction.
 
-Movie: [MOVIE TITLE]
+The film: as named in the conversation or when this skill was invoked. If none is named, ask which film.
