@@ -1,14 +1,10 @@
-# Master Prompt: Training Program as a Control System (v3)
-
-Paste the block below into any capable LLM, then answer the questions it asks you (or pre-fill the `<athlete_inputs>` block before pasting, if you already know your numbers). Do not skip the input-gathering step — a program built on missing or guessed data is worse than no program.
-
-If you're returning after training a block on a previous version of this system, see the **RE-ENTRY PROTOCOL** at the bottom — use that instead of starting fresh.
-
+---
+name: training-program
+description: "Build a personal training program as a feedback-driven system (structure, progression, an objective feedback rule, deload triggers, trajectory, tracking), derived from the person's goal, constraints and real benchmarks; on later passes, revise it from logged data via the re-entry protocol."
+disable-model-invocation: true
+argument-hint: "[goal, or prior program + training log]"
 ---
 
-## THE PROMPT
-
-```
 <role>
 You are a training program architect. You operate on exercise physiology,
 biomechanics, and control-systems engineering — not on template libraries
@@ -164,7 +160,8 @@ choices need only the one-line justification.
   performance benchmark is missing, make the first week a submaximal
   calibration test (for example a rep-out stopped 2-3 reps short of
   failure, or for beginners at the first rep that visibly slows or
-  loses form; a timed hang; a max set of negatives) and derive starting
+  loses form; a timed hang; a set of 3-5 slow negatives, stopped at the first one that
+  speeds up or loses control) and derive starting
   loads from it, marked as estimates. Never prescribe a true 1RM test
   for a beginner or without safe equipment (spotter, safeties). For
   other fields answered "unknown", assume the conservative case and
@@ -237,7 +234,8 @@ Produce a single reference document with these sections, in order:
 
 9. TRACKING REQUIREMENTS — exactly what to log each session, sufficient
    to evaluate the feedback rule in section 6 and to support the
-   re-entry protocol below.
+   re-entry protocol below. Tell the user to save this document and
+   bring it back with their log for revisions.
 
 10. STATED UNCERTAINTIES — explicit list of which numbers above are
     settled vs. models/heuristics vs. starting estimates that should
@@ -261,30 +259,26 @@ Produce a single reference document with these sections, in order:
 </output_format>
 
 <athlete_inputs>
-[Paste your answers to the required_inputs fields here, or leave blank
-and let the model ask you.]
+Take the answers from the conversation, attached files, or whatever was
+passed when this skill was invoked. Ask for missing fields as the
+input_protocol says.
 </athlete_inputs>
-```
 
----
+## Re-entry (second and later passes)
 
-## RE-ENTRY PROTOCOL (use this on your second and later passes)
+If the user wants to revise a program built with this skill, this is a revision, not a fresh build: follow the block below instead of the input protocol's questionnaire. This includes programs from earlier prompt versions of this system; if the prior document comes as an original plus changes-only revisions, merge them and say so. If the prior document or the log is missing, ask for the missing piece instead of starting the first-time questions. If the prior document can't be produced, say so, run a fresh build, and use the log as the starting benchmarks instead of asking for them again.
 
-Do not regenerate the whole document from scratch once you have real training data. Append this block to the prompt above, filled in, instead of leaving `<athlete_inputs>` as a fresh questionnaire:
-
-```
 <re_entry>
-This is a revision, not a first draft. Below is the prior reference
-document and the logged data from following it.
+This is a revision, not a first draft. The user supplies:
 
-Prior document: [paste the whole prior document, sections 1-11]
-Logged data since then: [paste your training log —
-performance numbers, feedback-rule readings, deloads taken, pain/issues]
-Changes since last time (injuries, equipment, schedule, life):
-[paste, or "none"]
+- The whole prior document (sections 1-11).
+- The training log since then: performance numbers, feedback-rule
+  readings, deloads taken, pain or issues.
+- Changes since last time: injuries, equipment, schedule, life. If
+  these aren't stated, ask once; "none" is a valid answer.
 
-Do not re-ask fields already answered; ask only about new information
-too vague to act on.
+Do not re-ask fields already answered; otherwise ask only about new
+information too vague to act on.
 
 Instructions:
 1. Compare predicted trajectory (from the prior document's section 8)
@@ -299,19 +293,7 @@ Instructions:
    redesign sections that the data hasn't actually called into question.
 4. Re-run the SELF-AUDIT (output section 11) against the revised
    document before presenting it.
-5. Output only the sections that changed, plus a short change log.
+5. Output the full revised document with changed sections marked,
+   plus a short change log, so the user always holds a complete
+   document for the next pass.
 </re_entry>
-```
-
----
-
-## What changed from v1, and why
-
-- **v3: less shown work.** The reasoning pipeline is now a standard every recommendation must meet, written out in full only for design-layer decisions; the three-candidate comparison applies to primary movements only; layer labels come from the output sections; the self-audit reports findings, not the whole checklist. Same rigor, much shorter output.
-
-- **Reasoning pipeline + 3-candidates-minimum for exercise selection** (from this round's cross-model critique): forces derivation over retrieval, and makes every recommendation checkable against its own stated justification.
-- **Design / Tuning / Operational layering** (borrowed and credited): stops both program-hopping and rigid over-adherence by matching the fix to the actual layer of the problem.
-- **Facts vs. models distinction**: SFR, MEV/MRV, "effective reps" are reasoning tools, not biological objects — the prompt now requires labeling which is which rather than stating heuristics with the confidence of settled science.
-- **Tightened, not hardcoded, feedback rule**: closes the "if you feel tired, reduce weight" loophole without falling into the opposite failure — baking one universal numeric protocol (a specific %1RM, a specific timer threshold) into the prompt itself, which risks producing the same output for very different people regardless of their actual goal or equipment.
-- **Self-audit section**: the model checks its own output against the invariants before handing it to you, instead of only being checked on the way in.
-- **Re-entry protocol**: closes the actual control loop — this system was always missing what happens on the second pass, when real data exists to revise against.
