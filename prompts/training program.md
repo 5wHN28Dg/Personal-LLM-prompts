@@ -1,4 +1,4 @@
-# Master Prompt: Training Program as a Control System (v2)
+# Master Prompt: Training Program as a Control System (v3)
 
 Paste the block below into any capable LLM, then answer the questions it asks you (or pre-fill the `<athlete_inputs>` block before pasting, if you already know your numbers). Do not skip the input-gathering step — a program built on missing or guessed data is worse than no program.
 
@@ -80,8 +80,10 @@ pre-decided answers to bake into the output:
 </first_principles>
 
 <decision_layers>
-Classify every decision you make into exactly one of these layers, and
-say which layer it belongs to when you make it:
+Every decision belongs to exactly one of these layers. The output
+sections below are already organized by layer; label a decision
+explicitly only when it doesn't match the layer of the section it
+appears in:
 
 - DESIGN decisions define the architecture: primary adaptation targeted,
   movement priorities, overall structure. These should change rarely —
@@ -101,9 +103,11 @@ is a design error — flag it if you catch yourself doing it.
 </decision_layers>
 
 <reasoning_pipeline>
-For every non-trivial recommendation in your output (exercise selection,
-volume assigned, progression scheme, feedback threshold), work through
-this sequence explicitly before stating the recommendation:
+Every non-trivial recommendation (exercise selection, volume assigned,
+progression scheme, feedback threshold) must survive these questions.
+Write the answers out for DESIGN-layer decisions. For everything else,
+give a one-line justification naming the goal or constraint it serves,
+and expand only where the choice is not obvious:
 
 1. Which goal does this serve?
 2. Which constraint does it have to satisfy?
@@ -113,11 +117,11 @@ this sequence explicitly before stating the recommendation:
    rejected in favor of this one?
 6. What observation, if it occurred, would change this decision?
 
-For exercise selection specifically: generate at least three candidate
-exercises for the movement pattern in question, compare their cost
-vectors against this individual's constraints and goal, reject two, and
-state why. Do not simply retrieve the first exercise convention
-suggests.
+For the primary movements (the ones the goal depends on): compare at
+least three candidate exercises against this individual's cost vectors
+and constraints, and state briefly why the chosen one wins. Do not
+simply retrieve the first exercise convention suggests. Accessory
+choices need only the one-line justification.
 </reasoning_pipeline>
 
 <hard_rules>
@@ -148,6 +152,23 @@ suggests.
   rather than invent one.
 - Explicitly mark anything that is a starting estimate rather than a
   fixed prescription.
+- Pain and injury: recommend a clinician before loading an area only
+  for swelling, instability, numbness or tingling, pain at rest or at
+  night, or pain that keeps rising despite reduced load. Otherwise, for
+  any listed injury history or current niggle, the feedback rule in
+  section 6 must include pain monitoring: a 0-10 rating during the
+  session and the next morning, rated against the person's usual
+  baseline, with the threshold that holds or reduces load and the
+  threshold that removes the movement.
+- "None" and "unknown" are valid answers about the person. If a
+  performance benchmark is missing, make the first week a submaximal
+  calibration test (for example a rep-out stopped 2-3 reps short of
+  failure, or for beginners at the first rep that visibly slows or
+  loses form; a timed hang; a max set of negatives) and derive starting
+  loads from it, marked as estimates. Never prescribe a true 1RM test
+  for a beginner or without safe equipment (spotter, safeties). For
+  other fields answered "unknown", assume the conservative case and
+  list it in section 10 as an assumption for tracking to test.
 </hard_rules>
 
 <input_protocol>
@@ -167,6 +188,7 @@ them correctly, THEN build the output.
 - Current performance benchmarks relevant to the goal (real numbers —
   no guessing)
 - Injury history and any current joint/tendon concerns
+- Age and bodyweight
 - Equipment access, training days per week, time per session
 - Recovery context: typical sleep hours, general stress load, rough
   protein/nutrition adequacy, physical demands of job/life outside
@@ -207,9 +229,11 @@ Produce a single reference document with these sections, in order:
    interval may serve as a backstop, but should not be the primary
    trigger).
 
-8. MULTI-YEAR TRAJECTORY — how this block fits into the arc toward the
-   stated goal, and what specific signal indicates readiness to move to
-   the next block or phase (a DESIGN-layer change).
+8. TRAJECTORY — how this block fits into the arc toward the stated goal
+   (multi-year where the goal calls for it), the checkpoint numbers that
+   show it is on or off track, and what specific signal indicates
+   readiness to move to the next block or phase (a DESIGN-layer change),
+   and what the next goal or phase is once this one is reached.
 
 9. TRACKING REQUIREMENTS — exactly what to log each session, sufficient
    to evaluate the feedback rule in section 6 and to support the
@@ -219,8 +243,10 @@ Produce a single reference document with these sections, in order:
     settled vs. models/heuristics vs. starting estimates that should
     move based on real-world feedback.
 
-11. SELF-AUDIT (perform this before presenting the document, and include
-    your findings) — go back through everything you just wrote and check:
+11. SELF-AUDIT (perform this before presenting the document; report
+    only the problems you found, what you changed, and anything still
+    open, and always answer the last two questions) — go back through
+    everything you just wrote and check:
     - Is every recommendation traceable to a goal or constraint via the
       reasoning pipeline?
     - Did any recommendation rely on convention alone, without
@@ -249,13 +275,16 @@ Do not regenerate the whole document from scratch once you have real training da
 ```
 <re_entry>
 This is a revision, not a first draft. Below is the prior reference
-document's key parameters and the logged data from following it.
+document and the logged data from following it.
 
-Prior GOAL STATEMENT: [paste section 1 from last time]
-Prior STRUCTURAL SKELETON + PROGRESSION PROTOCOL: [paste sections 4-5]
-Prior FEEDBACK RULE: [paste section 6]
+Prior document: [paste the whole prior document, sections 1-11]
 Logged data since then: [paste your training log —
 performance numbers, feedback-rule readings, deloads taken, pain/issues]
+Changes since last time (injuries, equipment, schedule, life):
+[paste, or "none"]
+
+Do not re-ask fields already answered; ask only about new information
+too vague to act on.
 
 Instructions:
 1. Compare predicted trajectory (from the prior document's section 8)
@@ -263,19 +292,22 @@ Instructions:
 2. Identify which layer needs to change: DESIGN (only if a core
    assumption about the goal or the individual has been falsified —
    state exactly which one), TUNING (if parameters need adjusting
-   within the same architecture), or OPERATIONAL (if the feedback rule
-   itself needs recalibrating because it's producing unreliable
-   readings).
+   within the same architecture, or the feedback rule itself needs
+   recalibrating because it's producing unreliable readings), or
+   OPERATIONAL (if the issue was a few sessions, not the plan).
 3. Make ONLY the changes justified by layer-matching in step 2. Do not
    redesign sections that the data hasn't actually called into question.
 4. Re-run the SELF-AUDIT (output section 11) against the revised
    document before presenting it.
+5. Output only the sections that changed, plus a short change log.
 </re_entry>
 ```
 
 ---
 
 ## What changed from v1, and why
+
+- **v3: less shown work.** The reasoning pipeline is now a standard every recommendation must meet, written out in full only for design-layer decisions; the three-candidate comparison applies to primary movements only; layer labels come from the output sections; the self-audit reports findings, not the whole checklist. Same rigor, much shorter output.
 
 - **Reasoning pipeline + 3-candidates-minimum for exercise selection** (from this round's cross-model critique): forces derivation over retrieval, and makes every recommendation checkable against its own stated justification.
 - **Design / Tuning / Operational layering** (borrowed and credited): stops both program-hopping and rigid over-adherence by matching the fix to the actual layer of the problem.
