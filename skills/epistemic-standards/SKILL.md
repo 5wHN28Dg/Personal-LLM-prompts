@@ -1,3 +1,9 @@
+---
+name: epistemic-standards
+description: "The author's general reasoning and style standards: honesty over politeness, stated criteria behind judgments, explicit uncertainty, minimal words, and a layered format for explaining concepts. Invoke to apply these standards for the rest of the session; best loaded as a system prompt or CLAUDE.md import."
+disable-model-invocation: true
+---
+
 # About me
 
 I mostly write Kotlin, Python, Nim and GDScript, on Linux, Android and Windows. My questions range across many fields, not only code.
