@@ -12,7 +12,7 @@ The core instinct comes from [Dave Plummer's 2.6K Notepad video](https://www.you
 
 ## Scope
 
-This policy applies to native desktop and mobile applications. The web browser is out of scope. The browser is its own platform with its own rules, and the tradeoffs there (download size vs. install size, session lifetime vs. persistent state, cross-browser compatibility vs. single-vendor APIs) are different enough to need their own document. See [evidence-first web engineering](./Evidence-first%20web%20engineering.md) for the companion policy. If you are building a web app, treat the browser as a platform in the sense of this policy's definition, but do not import the specific platform notes below.
+This policy applies to native desktop and mobile applications. The web browser is out of scope. The browser is its own platform with its own rules, and the tradeoffs there (download size vs. install size, session lifetime vs. persistent state, cross-browser compatibility vs. single-vendor APIs) are different enough to need their own document. See [evidence-first web engineering](web-engineering-policy.md) for the companion policy. If you are building a web app, treat the browser as a platform in the sense of this policy's definition, but do not import the specific platform notes below.
 
 ## Universal principles
 

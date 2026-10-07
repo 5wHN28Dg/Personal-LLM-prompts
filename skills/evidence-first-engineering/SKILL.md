@@ -1,15 +1,21 @@
+---
+name: evidence-first-engineering
+description: "Rules for evidence-first engineering in desktop, mobile and web apps: before adding a third-party dependency, framework or polyfill, replacing a platform-provided control with custom code, adding UI controls or features the platform may already provide (date pickers, dialogs, HTTP, storage), or choosing a stack, find out what the platform already provides and add only what it doesn't, keeping accessibility, security and measurement discipline. Not for bug fixes, refactors, or features built from existing project code."
+---
+
 # Evidence-first engineering
 
-Condensed from [platform engineering policy](./platform%20engineering%20policy.md) and [evidence-first web engineering](./Evidence-first%20web%20engineering.md), for loading into a model's context. The two essays carry the reasoning; this carries the rules. You don't need to read them to apply these rules.
+Condensed from two longer essays, [platform engineering policy](reference/platform-engineering-policy.md) and [web engineering policy](reference/web-engineering-policy.md). The essays carry the reasoning; this carries the rules. You don't need to read them to apply these rules; open one (if you can read files) only when a rule's reasoning is genuinely in question.
 
 Before building or importing anything, find out what the target platform already provides, and add only what it doesn't. A mature platform is a library of solved problems; a good application orchestrates them instead of reimplementing them. Small size is not the goal: maintainability, tests, accessibility, localization and security still apply.
 
-Apply this when adding a capability, adding a dependency, or replacing a platform feature. Bug fixes and changes that stay within existing choices skip the investigation procedure. The non-negotiables always apply.
+Apply this when adding a capability, adding a dependency, or replacing a platform feature. For a small feature, a one-line check of what the platform offers is enough. Bug fixes and changes that stay within existing choices skip the investigation procedure. The non-negotiables always apply.
 
 ## Which platform
 
 - **Native desktop or mobile**: the platform is the vendor's supported stack for the declared target versions. Win32, WinUI 3 and the Windows App SDK; AppKit and SwiftUI; the Android framework, Jetpack and Compose; UIKit and SwiftUI. On Apple platforms SwiftUI vs AppKit/UIKit is a real choice: SwiftUI for short-to-medium lifespans and standard controls, AppKit or UIKit for long-lived or heavily custom UI; mixing them is fine. Linux has no single OS GUI layer, so name the stack explicitly (GTK or Qt, portals, D-Bus, systemd user units).
 - **Apps that ship their own engine** (Electron, React Native) are native apps: they fall under the native rules, and the bundled engine is a cost to weigh. For routine work, the platform is that engine's APIs plus the OS features it exposes; raise a move to a native stack only when the task is about size or architecture, or I ask. UI rendered in a bundled web engine follows the web accessibility and escaping rules.
+- **Scripts, CLIs and servers:** the platform is the language's standard library and the OS. **Game engines:** the engine's built-in features.
 - **Web** (delivered over HTTP to a browser): the platform is standard HTML, CSS and Web APIs available in every browser the project claims to support, across all three engines (Blink, WebKit, Gecko), with a fallback where one is missing. Default to all three engines and treat WebKit as mandatory (most iOS users can only get WebKit). If the project declares a narrower set, follow it and note the iOS gap once. A Chrome-only feature is not a web feature.
 
 ## What counts as platform-provided
@@ -23,7 +29,7 @@ It must be vendor-supported for application development (web: standardized or on
 3. What is the smallest custom code or dependency that closes the gap?
 4. What is its full cost: size (on the web, paid on every visit), transitive dependency count, license, maintenance, security posture, and the cost of replacing it later?
 
-Weigh the answers against the project's real constraints: team, number of targets, expected lifespan, amount of client state, SEO or server-rendering needs. Before choosing an architecture or stack, build a capability matrix per project from current sources (vendor docs, MDN, caniuse), not memory; keep it in your working notes and write it to a file only if asked. The architecture is an output of that investigation, not an input. When choosing a stack, if a constraint that would change the choice (targets, lifespan, team) isn't stated, ask. For feature work, infer constraints from the repo.
+Weigh the answers against the project's real constraints: team, number of targets, expected lifespan, amount of client state, SEO or server-rendering needs. Before choosing an architecture or stack, build a capability matrix per project from current sources (vendor docs, MDN, caniuse), not memory; keep it in your working notes and write it to a file only if asked. The architecture is an output of that investigation, not an input. When choosing a stack, if a constraint that would change the choice (targets, lifespan, team) isn't stated, ask; don't ask when I've already named the stack. For feature work, infer constraints from the repo.
 
 On the web, prefer in this order, justifying each step by what the one below can't do: the browser, a small focused library, a framework, a meta-framework. For an app with meaningful client-side state, a framework is the expected endpoint; say so plainly. Safe-by-default escaping of user content is also a valid reason to take the framework step. Never mix two UI frameworks.
 

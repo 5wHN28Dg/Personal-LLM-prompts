@@ -4,7 +4,7 @@ A policy for building web software that uses what the browser platform actually 
 
 ## What this is
 
-This is the web companion to [evidence-first platform engineering](./platform%20engineering%20policy.md). Read that document first. The principles are the same. The platform is different, and the differences are large enough to need their own document.
+This is the web companion to [evidence-first platform engineering](platform-engineering-policy.md). Read that document first. The principles are the same. The platform is different, and the differences are large enough to need their own document.
 
 The web is not another native platform. It has no install step, so size is paid per visit rather than once. Its platform is the browser, which is fragmented by rendering engine rather than operating system. Its failure mode is the npm dependency tree rather than the bundled runtime. And its measurement regime is Core Web Vitals on real networks rather than installed size and steady-state memory.
 
