@@ -1,70 +1,71 @@
-# Personal-LLM-prompts
-A collection of the prompts and system prompts that I use for a couple of things. I keep iterating on them to refine their effectiveness. Below is a brief overview of each one:
+# Personal LLM prompts
 
-## The system prompt
-This is the one that I use with all LLMs except coding agents, a general-purpose epistemic standards prompt — it doesn't teach, it consults. It configures the LLM to reason without flattery, acknowledge uncertainty explicitly, and always surface the criteria behind any judgment so the reasoning can be verified, not just trusted.
+The prompts and system prompts I use, packaged as skills. I keep iterating on them.
 
-## task-specific prompts
-In addition to the system prompt, I maintain a small set of task-specific prompts tailored for different use cases I care about:
-- An adversarial Socratic tutor specification for coding agents
+Each one lives in `skills/<name>/SKILL.md`. In Claude Code they install as a plugin. Everywhere else, the body of each file is plain markdown you can paste into any LLM.
 
-  The way I use coding agents is a bit different from most people; I don't use them to get answers or write code for me. I use them as a thinking partner that's been explicitly instructed to push back, adapt to my actual understanding, and never sacrifice truth for comfort — so this system prompt isn't about getting better outputs, it's about engineering the agent's epistemology: how it reasons, how it teaches, and what it refuses to do. TLDR: if you are looking for a prompt that will make your coding agent do the coding for you but better, then this is not it, do not use it, you will hate it.
-- Career prompts:
+## Using them
 
-  these are 4 prompts that help in 4 career-related areas:
-  - Master CV builder prompt
+**Claude Code:**
 
-    designed to create me a master CV from a messy, unstructured input.
-  - Fit assessment + tailored resume prompt
-  
-    designed to analyze job descriptions against my actual abilities as listed in the master CV and **IF I am a good fit**, create a tailored resume.
-  - Cover letter + email body (takes Prompt 2's output as input)
-  
-    designed to craft a compelling cover letter and professional email communication based on the tailored resume and job description analysis from Prompt 2.
-  - LinkedIn profile evaluation prompt
-  
-    designed to analyze my LinkedIn profile against meaningful criteria and provide actionable feedback for improvement.
-  - Interview Answer Generation Prompt
+```
+/plugin marketplace add 5wHN28Dg/Personal-LLM-prompts
+/plugin install llm-prompts@personal-llm-prompts
+```
 
-    creates a tailered useful answers to interview questions
-  - Empoloyer Due Diligence
+Then call a skill with `/llm-prompts:<name>`, e.g. `/llm-prompts:cinema-pick`. You can pass inputs right after the name, attach files, or let the skill ask for what's missing. Most skills only run when you call them. Two, `translate` and `evidence-first-engineering`, can also load on their own when the task fits.
 
-    Is this a safe, stable, and honest place to work, and is this specific job posting real?
+To use a single skill without the plugin, copy its folder into `~/.claude/skills/` (all projects) or `.claude/skills/` (one project) and call it as `/<name>`.
 
-    Notes on using this template:
+**Any other LLM:** open the skill's `SKILL.md`, copy everything below the second `---` line, paste it, and then give it your inputs. Each skill lists the inputs it needs.
 
-    - Swap section 6 in/out depending on whether relocation, sponsorship, or remote-specific risk applies to the role.
-    - If the company is very small or very new (low public footprint), explicitly ask the tool to say so rather than padding the report — thin evidence is itself a data point.
-    - Re-run this for any company before a final interview round or offer stage, not just before applying — fresh layoff/lawsuit news can surface between application and offer.
-- 'continuation system' prompts
+**Web search:** `cinema-pick`, `movie-forecast`, `employer-due-diligence`, `cover-letter-research` and `company-intel` depend on current information, so use them where the model can search the web.
 
-  These are 2 prompts designed to let me continue my conversation in a new chat.
-  - Prompt 1: Context extraction prompt
-  
-    designed to analyze the current chat history and extract the essential context needed to continue the conversation when transitioning to a new session.
-  - Prompt 2: Conversation continuation prompt
-  
-    designed to take the extracted context from Prompt 1 and resume the conversation seamlessly in a new chat environment, maintaining coherence and continuity.
-- translation system prompt
+## General
 
-  designed to translate text between languages with high fidelity, maintaining the original tone, style, and contextual meaning across linguistic boundaries.
+- **`epistemic-standards`**: the system prompt I use with every LLM except coding agents. It consults rather than teaches: it reasons without flattery, says when it's unsure, and states the criteria behind any judgment so I can check the reasoning instead of trusting it. It works best as a system prompt or custom instructions. In Claude Code you can import it from a `CLAUDE.md` with `@path/to/skills/epistemic-standards/SKILL.md`, or invoke it to switch a session over.
 
-- cinema pick prompt
+- **`socratic-tutor`**: a Socratic tutor for coding agents. I don't use coding agents to write code for me. I use them as a thinking partner that pushes back, adapts to what I actually understand, and doesn't trade truth for comfort. By default it guides instead of answering; it gives a direct answer for plain lookups, boilerplate, code reviews, or when I say "just show me". TLDR: if you want a prompt that makes your coding agent do the coding for you, this isn't it. Don't use it, you'll hate it.
 
-  designed to pick me a movie among the provided options based on my current mood, who am I with, etc., providing personalized suggestions that align with my taste profile.
+- **`handoff`** and **`pickup`**: carry a conversation into a new chat. `handoff` writes a state-transfer document (goals, constraints, decisions, rejected approaches, open problems, the latest state of the work); `pickup` takes that document in the new chat, tells you in 1–3 sentences what it understood so you can correct it, and carries on without re-arguing settled decisions.
 
-  A few notes on why it's built this way:
+- **`translate`**: translation that transfers meaning, effect, register and cultural weight rather than words, with extra rules for English ↔ Arabic (dialects, religious formulas, grammatical gender, root-based wordplay, legal text). It adds translator's notes only when it made a real judgment call. For long technical documents, put a terminology table first (`Terminology (use exactly):` followed by `term → translation` lines) to keep terms consistent.
 
-    - Putting your **mood and company** before genre preference is deliberate — a model can reason about "tired, alone, want absorbing-not-devastating" far more usefully than "I like thrillers."
-    - The **negative review requirement** is the single highest-leverage line in the whole prompt. Without it, the model defaults to whatever has the shiniest aggregate score.
-    - No confidence percentage — those numbers look rigorous but aren't grounded in anything real for an LLM. The sacrifice statement does the actual job of surfacing uncertainty, honestly.
+- **`synthesize`**: give it several takes on one topic (answers from different models, articles) and it maps where they agree and disagree, classifies each disagreement as factual, definitional or values-based, keeps ideas only one source raised, and writes one synthesis that's more useful than any single take, without faking consensus.
 
-    > You can create a version of this that's tuned for streaming/home-watching decisions, where the big-screen-value criterion doesn't apply.
+- **`unslop`**: rewrites existing text to remove generic AI-writing patterns without flattening the author's voice. It targets causes (generic phrasing, flat emphasis, unfalsifiable words) rather than a list of banned words, and never invents detail to sound specific.
 
-- synthesis analyst
+- **`evidence-first-engineering`**: for coding agents. Before adding a dependency, a framework or custom code, find out what the platform already provides, and add only what it doesn't, while keeping accessibility, security and measurement discipline. `SKILL.md` is the one-page rule set; the full reasoning is in two essays in its `reference/` folder (native platforms and the web), which the agent opens only when it needs them.
 
-  to extract the signal from multiple perspectives on a topic, map where they converge and diverge, and produce a single integrated synthesis that is more useful than any individual take.
+## Job applications
 
-- training program prompt
+These work as a pipeline; each one's output is the next one's input.
 
-  this prompt will guide the model to create a training program that aligns with the user's goals and preferences.
+1. **`employer-due-diligence`**: is this a safe, stable and honest place to work, and is this specific job posting real? Every conclusion is labeled by evidence strength. Notes:
+   - Area 6 (relocation, sponsorship or remote-work risk) applies only when you describe your situation.
+   - If the company is very small or very new, thin evidence is itself a finding; the skill says so rather than padding the report.
+   - Re-run it before a final round or an offer, not just before applying: layoff or lawsuit news can surface in between.
+2. **`master-cv`**: builds a complete, factual master CV from messy inputs (old resumes, notes), and lists every conflict, gap and inferred skill for you to confirm.
+3. **`tailor-resume`**: checks a job description against your master CV. If a hard requirement is unmet, it stops and says NO FIT. If you fit, it maps the job's requirements to your evidence and writes a tailored resume with nothing invented.
+4. **`cover-letter-research`**: finds the specific, sourced, recent facts about the company that a "why this company, right now" paragraph needs. No mission-statement filler.
+5. **`cover-letter`**: writes the cover letter and/or the application email and subject line from the job description, `tailor-resume`'s strategy map and the tailored resume.
+6. **`company-intel`**: a fuller company briefing for interview prep: what they do, size and ownership, recent news, culture evidence, the team or hiring manager, and why they're probably hiring now. Every claim is sourced and dated.
+7. **`interview-prep`**: answers to your interview questions in your own voice, grounded only in your real experience and consistent with the resume you submitted, with salary-negotiation turns, delivery notes and likely follow-up questions. Send all your questions and documents at once so it builds the whole picture before answering. In other LLMs, Part 1 can go in the system prompt field and Part 2's inputs in your first message.
+
+Also for job hunting:
+
+- **`linkedin-review`**: evaluates your LinkedIn profile against your goal and target audience, both on whether the right people can find it and on how they'll judge it, with the top 3 fixes written out.
+- **`linkedin-reader`**: role-plays the average, silent LinkedIn reader and gives a gut reaction to a post or headline: would they stop scrolling, read it, engage?
+
+## Everything else
+
+- **`cinema-pick`**: picks one film to see at the cinema from your shortlist, based on your mood and who you're with, with a backup. Why it's built this way:
+  - **Mood and company** come before genre on purpose: a model can reason about "tired, alone, want absorbing-not-devastating" far more usefully than "I like thrillers".
+  - **The negative review requirement** is the single highest-leverage line. Without it, the model defaults to whatever has the shiniest aggregate score.
+  - **No confidence percentage:** those numbers look rigorous but aren't grounded in anything real for an LLM. The sacrifice statement (what you give up with each pick) surfaces the uncertainty honestly.
+
+  > You could make a version for streaming at home, where the big-screen-value criterion doesn't apply.
+
+- **`movie-forecast`**: predicts whether an upcoming film will be good, critically, as entertainment and commercially, using only evidence dated before release: a reference class, weighted signals, discounted noise, and what would prove the prediction wrong.
+
+- **`training-program`**: builds a training program as a feedback-driven system rather than a fixed template: structure, progression, an objective rule for adjusting it, deload triggers, and what to track. On later passes, give it the previous program and your training log and it revises only what the data calls into question. Version history is in its `CHANGELOG.md`.

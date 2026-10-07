@@ -1,0 +1,14 @@
+{
+  "name": "personal-llm-prompts",
+  "owner": {
+    "name": "5wHN28Dg"
+  },
+  "description": "Personal prompts packaged as Claude Code skills.",
+  "plugins": [
+    {
+      "name": "llm-prompts",
+      "source": "./",
+      "description": "Skills for honest reasoning, Socratic tutoring, translation, synthesis, job applications, training programs, film picks and evidence-first engineering."
+    }
+  ]
+}
