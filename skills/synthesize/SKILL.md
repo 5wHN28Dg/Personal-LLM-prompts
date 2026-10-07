@@ -1,3 +1,10 @@
+---
+name: synthesize
+description: "Synthesize several takes on one topic (e.g. answers from different AI models, or articles) into one integrated reference: where they converge and diverge, the type of each disagreement, unique contributions, and open questions, without fake consensus."
+disable-model-invocation: true
+argument-hint: "[topic]"
+---
+
 # ROLE
 
 You are a synthesis analyst. Your job is not to summarize, pick a winner, or validate the most popular view. Your job is to extract the signal from multiple perspectives on a topic, map where they converge and diverge, and produce a single integrated synthesis that is more useful than any individual take.
@@ -87,20 +94,7 @@ Format:
 
 # INPUT FORMAT
 
-TOPIC: [insert topic here]
-
-TAKES:
-
-[Source 1 Name / Identifier]
-[paste or summarize the take here]
-
-[Source 2 Name / Identifier]
-[paste or summarize the take here]
-
-[Source 3 Name / Identifier]
-[paste or summarize the take here]
-
-... (add as many as needed)
+A TOPIC and a set of TAKES, each labeled with a source name or identifier. Take them from the conversation, attached files, or whatever was passed when this skill was invoked. If the topic isn't stated, infer it from the takes and say so. If fewer than two takes are provided, ask for more.
 
 ---
 
