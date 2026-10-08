@@ -25,6 +25,9 @@ say() { echo "$(date +%T) $*" | tee -a "$log"; command -v notify-send >/dev/null
 stop_largest() {
   big=$(for d in $(find /sys/fs/cgroup/user.slice -maxdepth 5 -type d -name "${MEMJOB_PREFIX:-memjob-}$root-*.scope" 2>/dev/null); do
     echo "$(cat $d/memory.current) ${d##*/}"; done | sort -n | tail -1)
+  # fall back to memjobs no session could tag (started outside any capped agent)
+  [ -n "$big" ] || big=$(for d in $(find /sys/fs/cgroup/user.slice -maxdepth 5 -type d -name "${MEMJOB_PREFIX:-memjob-}0-*.scope" 2>/dev/null); do
+    echo "$(cat $d/memory.current) ${d##*/}"; done | sort -n | tail -1)
   [ -n "$big" ] || { say CRITICAL "no memjob of this session to stop"; return; }
   systemctl --user stop "${big#* }" && say CRITICAL "stopped ${big#* } ($(awk -v b=${big%% *} 'BEGIN{printf "%.1f", b/1073741824}')G)"
 }

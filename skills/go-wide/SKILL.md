@@ -19,7 +19,7 @@ Scripts: the `scripts/` folder next to this `SKILL.md` (called `$S` below). Reso
 ## 2. Heavy commands go through memjob
 
 Builds, links, test suites, browsers, dev servers, emulators and anything else that may take more than ~500 MB: `$S/memjob <GiB> <command…>`, with a realistic limit (2–4 GiB is typical). A job that exceeds its limit is killed alone; you and the user's desktop survive. Exit code 137 means it hit its limit: retry with a higher limit or less internal parallelism.
-- Keep the sum of running memjob limits ≤ `JOB_BUDGET`; rerun `$S/budget` before each new batch, since it changes with free memory and other sessions. Keep parallel compile/test processes ≤ `MAX_JOBS`. Cap link parallelism separately (`--link-jobs`, `-l`).
+- Keep the limits of the memjobs you start in a batch ≤ `JOB_BUDGET` (running jobs are already counted, since it comes from free memory); rerun `$S/budget` before each new batch. `JOB_BUDGET=0` means start nothing new. Keep parallel compile/test processes ≤ `MAX_JOBS`. Cap link parallelism separately (`--link-jobs`, `-l`).
 - Temp files: run commands with `TMPDIR=~/.cache/agent-tmp` (create it if missing). Never put large files in `/tmp` or `/dev/shm`; on many systems they're RAM, and killing a process doesn't free them. Delete temp files when each task finishes.
 - If you hand work to subagents, every subagent prompt must include: its memory share, its `-j`/`-n` limit, the memjob rule with the absolute path, and the temp-file rule.
 
@@ -37,6 +37,7 @@ Then act on it:
 - **normal** (after recovery): resume normal pacing.
 
 ## Notes
-- Inside a container or any cgroup with its own memory or CPU limit, `budget` and the watcher use that limit, not the host's.
+- Inside a container (a cgroup namespace with its own memory or CPU limit), `budget` and the watcher use that limit, not the host's. Limits set on a parent cgroup without a namespace aren't seen.
+- With several go-wide sessions on one machine, each watcher stops only its own jobs, so a machine-wide CRITICAL can stop one job per session at once. Jobs started outside any capped agent are stopped by whichever watcher has none of its own.
 - The cap and watcher last until the agent process exits. A new session or editor restart starts uncapped; running this skill again re-caps it.
 - Memory a process held before capping stays counted against its old group; only new allocations count toward the cap.
