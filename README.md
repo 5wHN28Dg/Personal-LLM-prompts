@@ -2,7 +2,7 @@
 
 The prompts and system prompts I use, packaged as skills. I keep iterating on them.
 
-Each one lives in `skills/<name>/SKILL.md`. In Claude Code they install as a plugin. Everywhere else, the body of each file is plain markdown you can paste into any LLM.
+Each one lives in `skills/<name>/SKILL.md`, except the job-hunting ones, which are grouped by stage under `skills/career/` (e.g. `skills/career/1-resume/master-cv/SKILL.md`). In Claude Code they install as a plugin. Everywhere else, the body of each file is plain markdown you can paste into any LLM.
 
 ## Using them
 
@@ -39,7 +39,7 @@ To use a single skill without the plugin, copy its folder into `~/.claude/skills
 
 ## Job applications
 
-These work as a pipeline; each one's output is the next one's input.
+These live in `skills/career/`, in folders numbered by stage: `0-should-i-work-here`, `1-resume`, `2-cover-letter`, `3-interview`, plus `linkedin`. They work as a pipeline; each one's output is the next one's input.
 
 1. **`employer-due-diligence`**: is this a safe, stable and honest place to work, and is this specific job posting real? Every conclusion is labeled by evidence strength. Notes:
    - Area 6 (relocation, sponsorship or remote-work risk) applies only when you describe your situation.

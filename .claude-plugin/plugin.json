@@ -4,5 +4,12 @@
   "version": "1.0.0",
   "description": "Skills for honest reasoning, Socratic tutoring, translation, synthesis, job applications, training programs, film picks and evidence-first engineering.",
   "author": { "name": "5wHN28Dg" },
-  "repository": "https://github.com/5wHN28Dg/Personal-LLM-prompts"
+  "repository": "https://github.com/5wHN28Dg/Personal-LLM-prompts",
+  "skills": [
+    "./skills/career/0-should-i-work-here/",
+    "./skills/career/1-resume/",
+    "./skills/career/2-cover-letter/",
+    "./skills/career/3-interview/",
+    "./skills/career/linkedin/"
+  ]
 }
