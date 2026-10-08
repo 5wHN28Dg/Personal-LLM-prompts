@@ -7,7 +7,7 @@ description: Work maximally in parallel (many subagents or parallel tasks, simul
 
 Work as parallel as you can: split work across as many subagents or parallel tasks as is useful. **The memory rules below always win over parallelism.**
 
-Scripts: `~/.agents/skills/go-wide/scripts/` (called `$S` below). Always use absolute paths, including in any prompts you hand to subagents.
+Scripts: the `scripts/` folder next to this `SKILL.md` (called `$S` below). Resolve it to an absolute path before running anything, and use that absolute path everywhere, including in any prompts you hand to subagents.
 
 ## 1. Budget, cap and watcher (do first)
 
