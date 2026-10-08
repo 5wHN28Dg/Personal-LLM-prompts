@@ -15,7 +15,7 @@ lim=${1:-$("$S/budget" | sed -n 's/^CAP=//p')}
 if [ $dry = 1 ]; then echo "dry run: can_cap=$can cgroup=${cg##*/} cap=${lim}G"; exit 0; fi
 rc=0
 if [ $can = 0 ]; then echo "capping unavailable here: watch-only mode"; rc=2
-elif case "$cg" in *-capped-*.scope) true;; *) false;; esac; then
+elif case "$cg" in *-capped-*.scope) p=${cg##*-capped-}; kill -0 "${p%.scope}" 2>/dev/null;; *) false;; esac; then
   # watch the session that owns the scope: memjobs started inside it are tagged with that pid
   root=${cg##*-capped-}; root=${root%.scope}
   max=$(cat /sys/fs/cgroup$cg/memory.max)

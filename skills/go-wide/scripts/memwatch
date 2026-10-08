@@ -2,8 +2,9 @@
 # usage: memwatch --start <agent-pid>   start a detached watcher for that agent (once)
 #        memwatch <agent-pid>           run in the foreground (what --start runs)
 # Prints one line per level change to stdout and ~/.cache/go-wide/memwatch-<pid>.log,
-# sends a desktop notification, and on CRITICAL stops the largest of this session's memjobs
-# by itself (memjobs from other sessions are left to their own watchers).
+# sends a desktop notification, and on CRITICAL stops by itself the largest memjob that is
+# either this session's or orphaned (its owner has no running watcher). Memjobs of other
+# watched sessions are left to their own watchers.
 # Exits when the agent process exits.
 S=$(cd "$(dirname "$0")" && pwd)
 log_dir=${XDG_CACHE_HOME:-$HOME/.cache}/go-wide; mkdir -p "$log_dir"
@@ -23,12 +24,15 @@ case "$max" in ''|max) ;; *) CAP=$(awk -v m="$max" 'BEGIN{printf "%.1f", m/10737
   WARN_SCOPE=$(awk -v c=$CAP 'BEGIN{printf "%.1f", c*0.83}'); CRIT_SCOPE=$(awk -v c=$CAP 'BEGIN{printf "%.1f", c*0.94}');; esac
 say() { echo "$(date +%T) $*" | tee -a "$log"; command -v notify-send >/dev/null && notify-send -a go-wide "memory: $1" "$*" 2>/dev/null; }
 stop_largest() {
-  big=$(for d in $(find /sys/fs/cgroup/user.slice -maxdepth 5 -type d -name "${MEMJOB_PREFIX:-memjob-}$root-*.scope" 2>/dev/null); do
-    echo "$(cat $d/memory.current) ${d##*/}"; done | sort -n | tail -1)
-  # fall back to memjobs no session could tag (started outside any capped agent)
-  [ -n "$big" ] || big=$(for d in $(find /sys/fs/cgroup/user.slice -maxdepth 5 -type d -name "${MEMJOB_PREFIX:-memjob-}0-*.scope" 2>/dev/null); do
-    echo "$(cat $d/memory.current) ${d##*/}"; done | sort -n | tail -1)
-  [ -n "$big" ] || { say CRITICAL "no memjob of this session to stop"; return; }
+  watched=" $("$S/sessions" --watched | tr '\n' ' ') "
+  big=$(for d in $(find /sys/fs/cgroup/user.slice -maxdepth 5 -type d -name "${MEMJOB_PREFIX:-memjob-}*.scope" 2>/dev/null); do
+    u=${d##*/}; o=${u#${MEMJOB_PREFIX:-memjob-}}; o=${o%.scope}
+    case "$o" in *-*) o=${o%%-*} ;; *) o= ;; esac   # memjob-<owner>-<n>; old memjob-<n> has none
+    # own jobs, plus jobs whose owner has no running watcher
+    if [ "$o" = "$root" ] || ! case "$watched" in *" $o "*) true;; *) false;; esac; then
+      echo "$(cat $d/memory.current) $u"; fi
+  done | sort -n | tail -1)
+  [ -n "$big" ] || { say CRITICAL "no memjob of this session (or orphaned) to stop"; return; }
   systemctl --user stop "${big#* }" && say CRITICAL "stopped ${big#* } ($(awk -v b=${big%% *} 'BEGIN{printf "%.1f", b/1073741824}')G)"
 }
 echo "memwatch: agent=$root floor=${FLOOR}G warn<${WARN_AVAIL} crit<${CRIT_AVAIL} recover>${RECOVER_AVAIL} scope cap=${CAP}G warn>${WARN_SCOPE} crit>${CRIT_SCOPE}" | tee -a "$log"

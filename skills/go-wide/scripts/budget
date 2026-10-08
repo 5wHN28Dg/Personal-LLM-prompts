@@ -5,8 +5,9 @@
 # count, not the host's. FLOOR_PCT: share of total RAM always kept free (default 20).
 #   CAP         ceiling for this session's own processes: total minus floor. Fixed, so a
 #               session started while memory is busy isn't capped below what it already uses.
-#   JOB_BUDGET  memory you may give new memjobs right now: available minus floor, split
-#               evenly across the go-wide sessions on this machine (SESSIONS). 0 = start nothing.
+#   JOB_BUDGET  memory you may give new memjobs right now: available, minus what running
+#               memjobs may still grow into, minus floor and a margin, split evenly across
+#               the live go-wide sessions on this machine (SESSIONS). 0 = start nothing.
 FLOOR_PCT=${FLOOR_PCT:-20}
 read_kb() { awk -v k="$1:" '$1==k {print $2}' /proc/meminfo; }
 total=$(read_kb MemTotal) avail=$(read_kb MemAvailable)
@@ -23,17 +24,21 @@ if [ -r /sys/fs/cgroup/cpu.max ]; then
   set -- $(cat /sys/fs/cgroup/cpu.max)
   [ "$1" != max ] && { q=$(( ($1 + $2 - 1) / $2 )); [ "$q" -lt "$cores" ] && cores=$q; }
 fi
-sessions=$(systemctl --user list-units --plain --no-legend 'go-wide-watch-*' 2>/dev/null | grep -c .)
-[ "$sessions" -ge 1 ] 2>/dev/null || sessions=$(pgrep -fc 'memwatch [0-9]+$' 2>/dev/null)
-[ "$sessions" -ge 0 ] 2>/dev/null || sessions=0
-# count this session too if its watcher isn't running yet (step 1 runs before capself)
-me=$("$(cd "$(dirname "$0")" && pwd)/findagent" 2>/dev/null)
-[ -n "$me" ] && ! systemctl --user is-active -q "go-wide-watch-$me" 2>/dev/null && sessions=$((sessions+1))
+S=$(cd "$(dirname "$0")" && pwd)
+live=" $("$S/sessions" | tr '\n' ' ') "
+sessions=$(echo $live | wc -w)
+# count this session too if it isn't capped or watched yet (step 1 runs before capself)
+me=$("$S/findagent" 2>/dev/null)
+case "$live" in *" $me "*) ;; *) [ -n "$me" ] && sessions=$((sessions+1)) ;; esac
 [ "$sessions" -ge 1 ] || sessions=1
-awk -v t="$total" -v a="$avail" -v pct="$FLOOR_PCT" -v cores="$cores" -v n="$sessions" 'BEGIN {
-  t/=1048576; a/=1048576; floor=t*pct/100
+# memory already promised to running memjobs but not used yet (limit minus current use)
+promised=$(for d in $(find /sys/fs/cgroup/user.slice -maxdepth 5 -type d -name 'memjob-*.scope' 2>/dev/null); do
+  m=$(cat $d/memory.max); [ "$m" = max ] || echo "$m $(cat $d/memory.current)"; done |
+  awk '{ if ($1>$2) s+=$1-$2 } END { printf "%d", s/1024 }')
+awk -v t="$total" -v a="$avail" -v pct="$FLOOR_PCT" -v cores="$cores" -v n="$sessions" -v pr="${promised:-0}" 'BEGIN {
+  t/=1048576; a/=1048576; pr/=1048576; floor=t*pct/100
   cap=int(t-floor); if (cap<2) cap=2
-  jb=int((a-floor)/n); if (jb<0) jb=0
+  jb=int((a-pr-floor-2.5)/n); if (jb<0) jb=0   # 2.5 = stay above the WARNING level
   printf "TOTAL=%.1f\nAVAILABLE=%.1f\nFLOOR=%.1f\nCAP=%d\nJOB_BUDGET=%d\nSESSIONS=%d\n", t, a, floor, cap, jb, n
   printf "WARN_AVAIL=%.1f\nCRIT_AVAIL=%.1f\nRECOVER_AVAIL=%.1f\n", floor+2.5, floor+0.5, floor+4.5
   printf "WARN_SCOPE=%.1f\nCRIT_SCOPE=%.1f\nMAX_JOBS=%d\n", cap*0.83, cap*0.94, cores

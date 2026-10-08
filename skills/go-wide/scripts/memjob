@@ -2,13 +2,15 @@
 # usage: memjob <GiB> <command...>: run in its own capped, kill-first group.
 # The unit is named memjob-<agent pid>-<n>, so this session's watcher stops only its own jobs.
 # The agent pid comes from this process's cgroup (agent-capped-<pid>.scope), which every
-# process the agent starts inherits, even if it's orphaned; findagent is the fallback.
+# process the agent starts inherits, even if it's orphaned; findagent is the fallback when
+# there's no such scope or its agent has exited.
 S=$(cd "$(dirname "$0")" && pwd)
 lim=$1; shift
 cg=$(cut -d: -f3 /proc/self/cgroup)
 case "$cg" in
-  *-capped-*.scope) root=${cg##*-capped-}; root=${root%.scope} ;;
-  *) root=$("$S/findagent" "$PPID" 2>/dev/null) ;;
+  *-capped-*.scope) root=${cg##*-capped-}; root=${root%.scope}
+    kill -0 "$root" 2>/dev/null || root= ;;   # the scope's agent has exited
 esac
+[ -n "$root" ] || root=$("$S/findagent" "$PPID" 2>/dev/null)
 exec systemd-run --user --scope -q --collect --unit="memjob-${root:-0}-$$" \
   -p MemoryMax="${lim}G" -p MemorySwapMax=0 choom -n 1000 -- "$@"
