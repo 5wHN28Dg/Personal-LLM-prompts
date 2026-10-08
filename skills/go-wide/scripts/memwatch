@@ -27,7 +27,7 @@ stop_largest() {
   watched=" $("$S/sessions" --watched | tr '\n' ' ') "
   big=$(for d in $(find /sys/fs/cgroup/user.slice -maxdepth 5 -type d -name "${MEMJOB_PREFIX:-memjob-}*.scope" 2>/dev/null); do
     u=${d##*/}; o=${u#${MEMJOB_PREFIX:-memjob-}}; o=${o%.scope}
-    case "$o" in *-*) o=${o%%-*} ;; *) o= ;; esac   # memjob-<owner>-<n>; old memjob-<n> has none
+    case "$o" in *-*) o=${o%%-*} ;; *) o=untagged ;; esac   # memjob-<owner>-<n>; old memjob-<n> has no owner
     # own jobs, plus jobs whose owner has no running watcher
     if [ "$o" = "$root" ] || ! case "$watched" in *" $o "*) true;; *) false;; esac; then
       echo "$(cat $d/memory.current) $u"; fi

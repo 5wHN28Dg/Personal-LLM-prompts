@@ -33,7 +33,9 @@ case "$live" in *" $me "*) ;; *) [ -n "$me" ] && sessions=$((sessions+1)) ;; esa
 [ "$sessions" -ge 1 ] || sessions=1
 # memory already promised to running memjobs but not used yet (limit minus current use)
 promised=$(for d in $(find /sys/fs/cgroup/user.slice -maxdepth 5 -type d -name 'memjob-*.scope' 2>/dev/null); do
-  m=$(cat $d/memory.max); [ "$m" = max ] || echo "$m $(cat $d/memory.current)"; done |
+  # anon = memory the job really holds; its page cache already counts as available
+  m=$(cat $d/memory.max 2>/dev/null); [ -n "$m" ] && [ "$m" != max ] &&
+    echo "$m $(awk '$1=="anon" {print $2}' $d/memory.stat 2>/dev/null)"; done |
   awk '{ if ($1>$2) s+=$1-$2 } END { printf "%d", s/1024 }')
 awk -v t="$total" -v a="$avail" -v pct="$FLOOR_PCT" -v cores="$cores" -v n="$sessions" -v pr="${promised:-0}" 'BEGIN {
   t/=1048576; a/=1048576; pr/=1048576; floor=t*pct/100
