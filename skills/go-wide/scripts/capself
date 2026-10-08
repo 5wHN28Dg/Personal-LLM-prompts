@@ -1,0 +1,22 @@
+#!/bin/sh
+# usage: capself [--dry-run] [GiB]: cap the coding-agent session this shell belongs to,
+# then start a self-enforcing memory watcher bound to it. Works with any agent.
+# Exit 2 = capping not possible here (no systemd/cgroup v2): watcher runs in watch-only mode.
+dry=0; [ "$1" = --dry-run ] && { dry=1; shift; }
+S=$(cd "$(dirname "$0")" && pwd)
+root=$("$S/findagent" "$PPID") || true
+[ -n "$root" ] || { echo "could not find the agent process; set AGENT_ROOT_PID=<pid> or AGENT_MATCH=<name>"; exit 1; }
+echo "agent root: $root ($(tr '\0' ' ' </proc/$root/cmdline | cut -c1-90))"
+can=1
+for t in systemd-run busctl choom pstree; do command -v $t >/dev/null || can=0; done
+{ [ -f /sys/fs/cgroup/cgroup.controllers ] && systemctl --user show-environment >/dev/null 2>&1; } || can=0
+cg=$(cut -d: -f3 /proc/$root/cgroup)
+lim=${1:-$("$S/budget" | sed -n 's/^CAP=//p')}
+if [ $dry = 1 ]; then echo "dry run: can_cap=$can cgroup=${cg##*/} cap=${lim}G"; exit 0; fi
+rc=0
+if [ $can = 0 ]; then echo "capping unavailable here: watch-only mode"; rc=2
+elif case "$cg" in *claude-capped-*|*agent-capped-*) true;; *) false;; esac; then
+  echo "already capped: ${cg##*/} memory.max=$(cat /sys/fs/cgroup$cg/memory.max)"
+else "$S/capagent" "$root" "$lim" || exit 1; fi
+"$S/memwatch" --start "$root"
+exit $rc

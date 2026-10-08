@@ -1,0 +1,13 @@
+#!/bin/sh
+# usage: capagent <root-pid> [GiB]: move a running agent process tree into a capped group
+root=$1; lim=${2:-18}
+pids=$(pstree -pT "$root" | grep -o '([0-9]*)' | tr -d '()')
+n=$(echo $pids | wc -w)
+busctl --user call org.freedesktop.systemd1 /org/freedesktop/systemd1 \
+  org.freedesktop.systemd1.Manager StartTransientUnit 'ssa(sv)a(sa(sv))' \
+  "agent-capped-$root.scope" fail 3 \
+  PIDs au $n $pids \
+  MemoryMax t $((lim*1024*1024*1024)) \
+  MemorySwapMax t $((1024*1024*1024)) 0 >/dev/null || exit 1
+for p in $pids; do choom -p "$p" -n 500 >/dev/null; done
+echo "moved $n processes into agent-capped-$root.scope (MemoryMax=${lim}G)"

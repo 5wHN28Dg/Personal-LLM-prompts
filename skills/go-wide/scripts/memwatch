@@ -1,0 +1,44 @@
+#!/bin/sh
+# usage: memwatch --start <agent-pid>   start a detached watcher for that agent (once)
+#        memwatch <agent-pid>           run in the foreground (what --start runs)
+# Prints one line per level change to stdout and ~/.cache/go-wide/memwatch-<pid>.log,
+# sends a desktop notification, and on CRITICAL stops the largest memjob by itself.
+# Exits when the agent process exits.
+S=$(cd "$(dirname "$0")" && pwd)
+log_dir=${XDG_CACHE_HOME:-$HOME/.cache}/go-wide; mkdir -p "$log_dir"
+if [ "$1" = --start ]; then
+  root=$2; log=$log_dir/memwatch-$root.log
+  pgrep -f "memwatch $root\$" >/dev/null && { echo "watcher already running; log: $log"; exit 0; }
+  if command -v systemd-run >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
+    systemd-run --user -q --collect --unit="go-wide-watch-$root" "$S/memwatch" "$root"
+  else setsid nohup "$S/memwatch" "$root" >/dev/null 2>&1 & fi
+  echo "watcher started; log: $log"; exit 0
+fi
+root=$1; log=$log_dir/memwatch-$root.log
+cg=/sys/fs/cgroup$(cut -d: -f3 /proc/$root/cgroup)
+eval "$("$S/budget")"
+max=$(cat "$cg/memory.max" 2>/dev/null)
+case "$max" in ''|max) ;; *) CAP=$(awk -v m="$max" 'BEGIN{printf "%.1f", m/1073741824}')
+  WARN_SCOPE=$(awk -v c=$CAP 'BEGIN{printf "%.1f", c*0.83}'); CRIT_SCOPE=$(awk -v c=$CAP 'BEGIN{printf "%.1f", c*0.94}');; esac
+say() { echo "$(date +%T) $*" | tee -a "$log"; command -v notify-send >/dev/null && notify-send -a go-wide "memory: $1" "$*" 2>/dev/null; }
+stop_largest() {
+  big=$(for d in $(find /sys/fs/cgroup/user.slice -maxdepth 5 -type d -name "${MEMJOB_PREFIX:-memjob-}*.scope" 2>/dev/null); do
+    echo "$(cat $d/memory.current) ${d##*/}"; done | sort -n | tail -1)
+  [ -n "$big" ] || { say CRITICAL "no memjob to stop"; return; }
+  systemctl --user stop "${big#* }" && say CRITICAL "stopped ${big#* } ($(awk -v b=${big%% *} 'BEGIN{printf "%.1f", b/1073741824}')G)"
+}
+echo "memwatch: agent=$root floor=${FLOOR}G warn<${WARN_AVAIL} crit<${CRIT_AVAIL} recover>${RECOVER_AVAIL} scope cap=${CAP}G warn>${WARN_SCOPE} crit>${CRIT_SCOPE}" | tee -a "$log"
+state=normal last=0
+while kill -0 "$root" 2>/dev/null; do
+  a=$(awk '/^MemAvailable:/{printf "%.1f", $2/1048576}' /proc/meminfo)
+  s=$(awk '{printf "%.1f", $1/1073741824}' "$cg/memory.current" 2>/dev/null || echo 0)
+  new=$(awk -v a=$a -v s=$s -v st=$state -v wa=$WARN_AVAIL -v ca=$CRIT_AVAIL -v ra=$RECOVER_AVAIL -v ws=$WARN_SCOPE -v cs=$CRIT_SCOPE 'BEGIN{
+    if (a<ca || s>cs) print "CRITICAL"; else if (a<wa || s>ws) print (st=="CRITICAL"?"CRITICAL":"WARNING");
+    else if (st!="normal" && a<ra) print st; else print "normal" }')
+  [ "$new" != "$state" ] && say "$new" "available=${a}G agent=${s}G"
+  now=$(date +%s)
+  # act on entering CRITICAL, then at most every 10s while it lasts
+  [ "$new" = CRITICAL ] && [ $((now-last)) -ge 10 ] && { stop_largest; last=$now; }
+  state=$new; sleep 2
+done
+echo "$(date +%T) agent $root exited; watcher done" >> "$log"

@@ -1,0 +1,5 @@
+#!/bin/sh
+# usage: memjob <GiB> <command...>: run in its own capped, kill-first group
+lim=$1; shift
+exec systemd-run --user --scope -q --collect --unit="memjob-$$" \
+  -p MemoryMax="${lim}G" -p MemorySwapMax=0 choom -n 1000 -- "$@"

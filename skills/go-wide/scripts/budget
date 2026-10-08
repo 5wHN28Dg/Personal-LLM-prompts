@@ -1,0 +1,12 @@
+#!/bin/sh
+# Print this machine's memory budget as KEY=VALUE lines (GiB, integers/1 decimal).
+# FLOOR_PCT: share of total RAM always kept free for the rest of the system (default 20).
+FLOOR_PCT=${FLOOR_PCT:-20}
+awk -v pct="$FLOOR_PCT" -v cores="$(nproc)" '
+/^MemTotal:/ {t=$2/1048576} /^MemAvailable:/ {a=$2/1048576}
+END {
+  floor=t*pct/100; cap=int(a-floor); if (cap<2) cap=2
+  printf "TOTAL=%.1f\nAVAILABLE=%.1f\nFLOOR=%.1f\nCAP=%d\n", t, a, floor, cap
+  printf "WARN_AVAIL=%.1f\nCRIT_AVAIL=%.1f\nRECOVER_AVAIL=%.1f\n", floor+2.5, floor+0.5, floor+4.5
+  printf "WARN_SCOPE=%.1f\nCRIT_SCOPE=%.1f\nMAX_JOBS=%d\n", cap*0.83, cap*0.94, cores
+}' /proc/meminfo

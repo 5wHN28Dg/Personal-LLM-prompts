@@ -1,0 +1,15 @@
+#!/bin/sh
+# usage: findagent [pid]: print the root PID of the coding agent that owns this process.
+# Walks up the process tree and returns the highest ancestor whose command line names a
+# known agent (or an ACP bridge such as Zed's *-acp). Override: AGENT_ROOT_PID=<pid>.
+# Extra names: AGENT_MATCH='name1|name2'.
+[ -n "$AGENT_ROOT_PID" ] && { echo "$AGENT_ROOT_PID"; exit 0; }
+names="claude|codex|gemini|opencode|goose|kimi|qwen|aider|cursor-agent|amp|crush|copilot|droid|cline|kilo|junie|auggie|vibe${AGENT_MATCH:+|$AGENT_MATCH}"
+re="(^|[/ @])($names)([-_./ @]|$)|-acp([ /]|$)"
+p=${1:-$PPID} root=
+while [ "$p" -gt 1 ] 2>/dev/null; do
+  if tr '\0' ' ' </proc/$p/cmdline 2>/dev/null | grep -Eq "$re"; then root=$p
+  elif [ -n "$root" ]; then break; fi
+  p=$(awk '{print $4}' /proc/$p/stat 2>/dev/null) || break
+done
+[ -n "$root" ] && echo "$root"

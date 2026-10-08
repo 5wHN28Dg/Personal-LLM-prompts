@@ -13,7 +13,7 @@ Each one lives in `skills/<name>/SKILL.md`, except the job-hunting ones, which a
 /plugin install llm-prompts@personal-llm-prompts
 ```
 
-Then call a skill with `/llm-prompts:<name>`, e.g. `/llm-prompts:cinema-pick`. You can pass inputs right after the name, attach files, or let the skill ask for what's missing. Most skills only run when you call them. Two, `translate` and `evidence-first-engineering`, can also load on their own when the task fits.
+Then call a skill with `/llm-prompts:<name>`, e.g. `/llm-prompts:cinema-pick`. You can pass inputs right after the name, attach files, or let the skill ask for what's missing. Most skills only run when you call them. Three, `translate`, `evidence-first-engineering` and `go-wide`, can also load on their own when the task fits.
 
 To use a single skill without the plugin, copy its folder into `~/.claude/skills/` (all projects) or `.claude/skills/` (one project) and call it as `/<name>`.
 
@@ -36,6 +36,8 @@ To use a single skill without the plugin, copy its folder into `~/.claude/skills
 - **`unslop`**: rewrites existing text to remove generic AI-writing patterns without flattening the author's voice. It targets causes (generic phrasing, flat emphasis, unfalsifiable words) rather than a list of banned words, and never invents detail to sound specific.
 
 - **`evidence-first-engineering`**: for coding agents. Before adding a dependency, a framework or custom code, find out what the platform already provides, and add only what it doesn't, while keeping accessibility, security and measurement discipline. `SKILL.md` is the one-page rule set; the full reasoning is in two essays in its `reference/` folder (native platforms and the web), which the agent opens only when it needs them.
+
+- **`go-wide`**: for coding agents on Linux with systemd. Lets the agent work as parallel as it can (many subagents, simultaneous builds and tests) without running the machine out of memory: it caps the agent session's memory with a cgroup, runs heavy commands in their own kill-first groups, and starts a watcher that stops the largest runaway job by itself. The shell scripts it uses are in its `scripts/` folder.
 
 ## Job applications
 
