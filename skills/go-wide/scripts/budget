@@ -1,12 +1,47 @@
 #!/bin/sh
-# Print this machine's memory budget as KEY=VALUE lines (GiB, integers/1 decimal).
-# FLOOR_PCT: share of total RAM always kept free for the rest of the system (default 20).
+# usage: budget              print this machine's memory budget as KEY=VALUE lines (GiB)
+#        budget --available  print only the memory available right now (GiB)
+# Inside a container (a cgroup namespace with its own memory or CPU limit), those limits
+# count, not the host's. FLOOR_PCT: share of total RAM always kept free (default 20).
+#   CAP         ceiling for this session's own processes: total minus floor. Fixed, so a
+#               session started while memory is busy isn't capped below what it already uses.
+#   JOB_BUDGET  memory you may give new memjobs right now: available, minus what running
+#               memjobs may still grow into, minus floor and a margin, split evenly across
+#               the live go-wide sessions on this machine (SESSIONS). 0 = start nothing.
 FLOOR_PCT=${FLOOR_PCT:-20}
-awk -v pct="$FLOOR_PCT" -v cores="$(nproc)" '
-/^MemTotal:/ {t=$2/1048576} /^MemAvailable:/ {a=$2/1048576}
-END {
-  floor=t*pct/100; cap=int(a-floor); if (cap<2) cap=2
-  printf "TOTAL=%.1f\nAVAILABLE=%.1f\nFLOOR=%.1f\nCAP=%d\n", t, a, floor, cap
+read_kb() { awk -v k="$1:" '$1==k {print $2}' /proc/meminfo; }
+total=$(read_kb MemTotal) avail=$(read_kb MemAvailable)
+if [ -r /sys/fs/cgroup/memory.max ] && [ -r /sys/fs/cgroup/memory.current ] && [ "$(cat /sys/fs/cgroup/memory.max)" != max ]; then
+  # container (cgroup namespace root): page cache that can be dropped doesn't count as used
+  inact=$(awk '$1=="inactive_file" {print $2}' /sys/fs/cgroup/memory.stat 2>/dev/null)
+  lim=$(( $(cat /sys/fs/cgroup/memory.max) / 1024 )); used=$(( ($(cat /sys/fs/cgroup/memory.current) - ${inact:-0}) / 1024 ))
+  [ "$lim" -lt "$total" ] && total=$lim
+  [ $((lim - used)) -lt "$avail" ] && avail=$((lim - used))
+fi
+[ "$1" = --available ] && { awk -v a="$avail" 'BEGIN{printf "%.1f\n", a/1048576}'; exit 0; }
+cores=$(nproc)
+if [ -r /sys/fs/cgroup/cpu.max ]; then
+  set -- $(cat /sys/fs/cgroup/cpu.max)
+  [ "$1" != max ] && { q=$(( ($1 + $2 - 1) / $2 )); [ "$q" -lt "$cores" ] && cores=$q; }
+fi
+S=$(cd "$(dirname "$0")" && pwd)
+live=" $("$S/sessions" | tr '\n' ' ') "
+sessions=$(echo $live | wc -w)
+# count this session too if it isn't capped or watched yet (step 1 runs before capself)
+me=$("$S/findagent" 2>/dev/null)
+case "$live" in *" $me "*) ;; *) [ -n "$me" ] && sessions=$((sessions+1)) ;; esac
+[ "$sessions" -ge 1 ] || sessions=1
+# memory already promised to running memjobs but not used yet (limit minus current use)
+promised=$(for d in $(find /sys/fs/cgroup/user.slice -maxdepth 5 -type d -name 'memjob-*.scope' 2>/dev/null); do
+  # anon = memory the job really holds; its page cache already counts as available
+  m=$(cat $d/memory.max 2>/dev/null); [ -n "$m" ] && [ "$m" != max ] &&
+    echo "$m $(awk '$1=="anon" {print $2}' $d/memory.stat 2>/dev/null)"; done |
+  awk '{ if ($1>$2) s+=$1-$2 } END { printf "%d", s/1024 }')
+awk -v t="$total" -v a="$avail" -v pct="$FLOOR_PCT" -v cores="$cores" -v n="$sessions" -v pr="${promised:-0}" 'BEGIN {
+  t/=1048576; a/=1048576; pr/=1048576; floor=t*pct/100
+  cap=int(t-floor); if (cap<2) cap=2
+  jb=int((a-pr-floor-2.5)/n); if (jb<0) jb=0   # 2.5 = stay above the WARNING level
+  printf "TOTAL=%.1f\nAVAILABLE=%.1f\nFLOOR=%.1f\nCAP=%d\nJOB_BUDGET=%d\nSESSIONS=%d\n", t, a, floor, cap, jb, n
   printf "WARN_AVAIL=%.1f\nCRIT_AVAIL=%.1f\nRECOVER_AVAIL=%.1f\n", floor+2.5, floor+0.5, floor+4.5
   printf "WARN_SCOPE=%.1f\nCRIT_SCOPE=%.1f\nMAX_JOBS=%d\n", cap*0.83, cap*0.94, cores
-}' /proc/meminfo
+}'
