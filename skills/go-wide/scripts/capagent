@@ -1,13 +1,33 @@
 #!/bin/sh
 # usage: capagent <root-pid> [GiB]: move a running agent process tree into a capped group
+# The group is created holding only the agent itself; its descendants are then moved in one
+# at a time. Handing systemd the whole tree in one request doesn't work: it rejects the
+# request if any listed process has exited, and this script's own helpers (pstree, grep)
+# are in the tree and always have. CAP_UNIT_PREFIX renames the unit (used by the tests).
 root=$1; lim=${2:-18}
-pids=$(pstree -pT "$root" | grep -o '([0-9]*)' | tr -d '()')
-n=$(echo $pids | wc -w)
+unit=${CAP_UNIT_PREFIX:-agent-capped}-$root.scope
+tree() { pstree -pT "$root" | grep -o '([0-9]*)' | tr -d '()'; }
 busctl --user call org.freedesktop.systemd1 /org/freedesktop/systemd1 \
   org.freedesktop.systemd1.Manager StartTransientUnit 'ssa(sv)a(sa(sv))' \
-  "agent-capped-$root.scope" fail 3 \
-  PIDs au $n $pids \
+  "$unit" fail 3 \
+  PIDs au 1 "$root" \
   MemoryMax t $((lim*1024*1024*1024)) \
   MemorySwapMax t $((1024*1024*1024)) 0 >/dev/null || exit 1
-for p in $pids; do choom -p "$p" -n 500 >/dev/null; done
-echo "moved $n processes into agent-capped-$root.scope (MemoryMax=${lim}G)"
+# the request is only queued: wait until the agent is really in the group
+i=0
+until cg=$(cut -d: -f3 /proc/"$root"/cgroup 2>/dev/null) && [ "${cg##*/}" = "$unit" ]; do
+  i=$((i+1)); [ $i -gt 50 ] && { echo "capagent: $unit was not created"; exit 1; }
+  sleep 0.1
+done
+choom -p "$root" -n 500 >/dev/null 2>&1
+n=1
+# twice: a process that forked during the first pass left its child outside the group
+for _ in 1 2; do
+  for p in $(tree); do
+    [ "$(cut -d: -f3 /proc/"$p"/cgroup 2>/dev/null)" = "$cg" ] && continue   # already in
+    # a process that has exited can't be moved; that's fine
+    { echo "$p" >"/sys/fs/cgroup$cg/cgroup.procs"; } 2>/dev/null || continue
+    choom -p "$p" -n 500 >/dev/null 2>&1; n=$((n+1))
+  done
+done
+echo "moved $n processes into $unit (MemoryMax=${lim}G)"
