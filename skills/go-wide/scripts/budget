@@ -77,13 +77,40 @@ long_age() {
 STATE=${GO_WIDE_STATE:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/go-wide}
 # (always the real /proc: a test hook must not make other sessions' claims look dead)
 pstart() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'; }
+# live <kind> <pid> <start> <ns> <time> <unit>: is a ledger entry live? Entries carry the pid
+# namespace that wrote them (ns=); a pid only means something in its own namespace. Entries
+# from another namespace (a sandbox or container sharing XDG_RUNTIME_DIR) are kept while their
+# job's cgroup exists; otherwise a claim lasts 60 s and a want 120 s from its time, on the
+# boot clock, so a vanished namespace can't hold memory for good. No ns: written here.
+myns=$(readlink /proc/self/ns/pid 2>/dev/null | tr -dc 0-9)
+live() {
+  case "$3" in ''|*[!0-9]*) return 1 ;; esac   # malformed
+  if [ -z "$4" ] || [ "$4" = "$myns" ]; then [ "$(pstart "$2")" = "$3" ]; return; fi
+  [ "$1" = claim ] && [ -n "$6" ] &&
+    [ -n "$(find "$CG/user.slice" -maxdepth 5 -type d -name "$6" 2>/dev/null | head -1)" ] && return 0
+  case "$5" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" = want ] && ttl=120 || ttl=60
+  [ $(( $(awk '{print int($1)}' /proc/uptime) - $5 )) -lt "$ttl" ]
+}
+# entry_live <ledger line>: unpack a claim or want line and call live
+entry_live() {
+  set -f; set -- $1; set +f
+  k=$1 p=$2 s=$3 ns='' tm='' u=''
+  for f; do case "$f" in ns=*) ns=${f#ns=} ;; t=*) tm=${f#t=} ;; esac; done
+  [ "$k" = claim ] && u=$4 && tm=${tm:-}
+  [ "$k" = want ] && tm=$5
+  live "$k" "$p" "$s" "$ns" "$tm" "$u"
+}
 claimed=0 wanted=0 clres=
 if [ -r "$STATE/ledger" ]; then
-  while read -r kind pid st x bytes; do
-    [ "$kind" = claim ] || [ "$kind" = want ] || continue
-    case "$st" in ''|*[!0-9]*) continue ;; esac                   # malformed
-    [ -n "$pid" ] && [ "$(pstart "$pid")" = "$st" ] || continue   # dead or reused pid
-    if [ "$kind" = want ]; then wanted=$((wanted + x)); continue; fi
+  while read -r line || [ -n "$line" ]; do
+    case "$line" in claim\ *|want\ *) ;; *) continue ;; esac
+    entry_live "$line" || continue
+    set -f; set -- $line; set +f; kind=$1 x=$4 bytes=$5
+    if [ "$kind" = want ]; then
+      case "$x" in ''|*[!0-9]*) ;; *) wanted=$((wanted + x)) ;; esac; continue
+    fi
+    case "$bytes" in ''|*[!0-9]*) continue ;; esac   # malformed claim
     # a job whose cgroup already has its limit is counted from the cgroup below
     d=$(find "$CG/user.slice" -maxdepth 5 -type d -name "$x" 2>/dev/null | head -1)
     m=$([ -n "$d" ] && cat "$d/memory.max" 2>/dev/null)

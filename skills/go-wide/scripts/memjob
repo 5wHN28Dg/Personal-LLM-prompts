@@ -29,6 +29,31 @@ esac
 pstart() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'; }
 # the boot clock never steps back, unlike the wall clock
 clock() { awk '{print int($1)}' /proc/uptime; }
+CG=${GO_WIDE_CGROUP_ROOT:-/sys/fs/cgroup}
+# live <kind> <pid> <start> <ns> <time> <unit>: is a ledger entry live? Entries carry the pid
+# namespace that wrote them (ns=); a pid only means something in its own namespace. Entries
+# from another namespace (a sandbox or container sharing XDG_RUNTIME_DIR) are kept while their
+# job's cgroup exists; otherwise a claim lasts 60 s and a want 120 s from its time, on the
+# boot clock, so a vanished namespace can't hold memory for good. No ns: written here.
+myns=$(readlink /proc/self/ns/pid 2>/dev/null | tr -dc 0-9)
+live() {
+  case "$3" in ''|*[!0-9]*) return 1 ;; esac   # malformed
+  if [ -z "$4" ] || [ "$4" = "$myns" ]; then [ "$(pstart "$2")" = "$3" ]; return; fi
+  [ "$1" = claim ] && [ -n "$6" ] &&
+    [ -n "$(find "$CG/user.slice" -maxdepth 5 -type d -name "$6" 2>/dev/null | head -1)" ] && return 0
+  case "$5" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" = want ] && ttl=120 || ttl=60
+  [ $(( $(awk '{print int($1)}' /proc/uptime) - $5 )) -lt "$ttl" ]
+}
+# entry_live <ledger line>: unpack a claim or want line and call live
+entry_live() {
+  set -f; set -- $1; set +f
+  k=$1 p=$2 s=$3 ns='' tm='' u=''
+  for f; do case "$f" in ns=*) ns=${f#ns=} ;; t=*) tm=${f#t=} ;; esac; done
+  [ "$k" = claim ] && u=$4 && tm=${tm:-}
+  [ "$k" = want ] && tm=$5
+  live "$k" "$p" "$s" "$ns" "$tm" "$u"
+}
 me=$$ st=$(pstart $$) session=${root:-0}
 unit=memjob-${root:-0}-$kind$me-$st.scope
 bytes=$(awk -v g="$lim" 'BEGIN { printf "%.0f", g*1073741824 }')
@@ -50,9 +75,7 @@ admit() (
   # keep the version line and live entries (pid running with the same start time)
   tmp=$STATE/ledger.$$
   while read -r line || [ -n "$line" ]; do
-    case "$line" in claim\ *|want\ *) set -- $line
-      case "$3" in ''|*[!0-9]*) continue ;; esac   # malformed
-      [ "$(pstart "$2")" = "$3" ] || continue ;; esac
+    case "$line" in claim\ *|want\ *) entry_live "$line" || continue ;; esac
     echo "$line"
   done <"$STATE/ledger" >"$tmp" && mv "$tmp" "$STATE/ledger" || { rm -f "$tmp"; echo nolock; exit; }
   FREE='' CEILING=''
@@ -108,8 +131,8 @@ admit() (
     g=1073741824; if (b > c*g) print "refuse"; else if (b <= f*g - h) print "ok"; else print "wait" }')
   { awk -v me="$me" '!($1=="want" && $2==me)' "$STATE/ledger"
     case "$verdict" in
-      ok) echo "claim $me $st $unit $bytes" ;;
-      wait) echo "want $me $st $bytes ${mine:-$now} $session" ;;
+      ok) echo "claim $me $st $unit $bytes ns=$myns t=$now" ;;
+      wait) echo "want $me $st $bytes ${mine:-$now} $session ns=$myns" ;;
     esac; } >"$tmp" && mv "$tmp" "$STATE/ledger" || { rm -f "$tmp"; echo nolock; exit; }
   echo "$verdict $FREE $CEILING $(awk -v h="$held" 'BEGIN { printf "%.2f", h/1073741824 }')"
 )
@@ -120,13 +143,7 @@ withdraw() (   # remove this process's want (on giving up)
     mv "$STATE/ledger.$$" "$STATE/ledger" || rm -f "$STATE/ledger.$$"
 )
 
-# A memjob that can't reach the systemd user manager can't start a job anyway (systemd-run
-# will fail with its own error). It must not touch the ledger either: from another pid
-# namespace (a sandbox or container sharing XDG_RUNTIME_DIR) every other session's pid looks
-# dead, so pruning would delete their live claims.
-if ! systemctl --user show-environment >/dev/null 2>&1; then
-  echo "memjob: systemd user manager unreachable; not using the ledger" >&2
-elif command -v flock >/dev/null; then
+if command -v flock >/dev/null; then
   t0=$(clock) said=0
   while :; do
     left=$((wait_max - ($(clock) - t0))); lw=5; [ "$left" -lt 5 ] && lw=$((left > 1 ? left : 1))

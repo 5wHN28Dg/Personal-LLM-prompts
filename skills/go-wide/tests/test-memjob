@@ -20,6 +20,7 @@ for a; do echo "arg <$a>"; done >>"$JOBLOG"
 if flock -n "$GO_WIDE_STATE/ledger.lock" true; then echo "lock free" >>"$JOBLOG"; else echo "lock held" >>"$JOBLOG"; fi
 sleep "${JOB_SECS:-0}"
 STUB
+printf '#!/bin/sh\nexit 0\n' >"$t/bin/systemctl"   # no live user manager needed
 chmod +x "$t/bin/"*
 # machine: 10 GiB total, 8 GiB available: floor 2, margin 2.5, so FREE = 3.5 GiB, CEILING 3.5
 printf 'MemTotal: %d kB\nMemAvailable: %d kB\n' 10485760 8388608 >"$t/meminfo"
@@ -184,13 +185,29 @@ MEMJOB_WAIT=1 mj 1; check "fair share with several sessions holding memory" 0 $?
 reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $((2*G))"
 check "budget's RESERVED per session" "\"777:$((2*G))\"" "$("$t/bin/budget" | sed -n 's/^RESERVED=//p')"
 
-# without the user manager (e.g. another pid namespace) the ledger is left untouched, even an
-# entry whose pid looks dead from here
-reset; printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope 1\n' >"$t/state/ledger"; cp "$t/state/ledger" "$t/before"
-printf '#!/bin/sh\nexit 1\n' >"$t/bin/systemctl"; chmod +x "$t/bin/systemctl"
-mj 1; grep -q 'user manager unreachable' "$t/err"; check "no user manager: says so" 0 $?
-check "...and leaves the ledger alone" same "$(cmp -s "$t/before" "$t/state/ledger" && echo same || echo changed)"
-rm "$t/bin/systemctl"
+# entries from another pid namespace: their pids mean nothing here, so they are not judged by
+# pid. A fresh foreign claim (no cgroup yet) is kept and counted; one older than 60 s without a
+# cgroup is dropped; one whose cgroup exists is kept; a foreign want lasts 120 s.
+NS=$(readlink /proc/self/ns/pid | tr -dc 0-9); OTHER=$((NS + 1))
+reset; printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope %s ns=%s t=%s\n' $((3*G)) $OTHER "$(now)" >"$t/state/ledger"
+MEMJOB_WAIT=1 mj 1; check "fresh claim from another namespace still counts" 75 $?
+check "...and is kept" 1 "$(ledger claim)"
+reset; printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope %s ns=%s t=%s\n' $((3*G)) $OTHER $(( $(now) - 61 )) >"$t/state/ledger"
+mj 1; check "foreign claim past 60 s without a cgroup: dropped" 0 $?
+check "...from the ledger" 1 "$(ledger claim)"
+reset; mkdir -p "$t/cg/user.slice/app.slice/memjob-9-1-1.scope"; echo max >"$t/cg/user.slice/app.slice/memjob-9-1-1.scope/memory.max"
+printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope %s ns=%s t=%s\n' $((3*G)) $OTHER $(( $(now) - 61 )) >"$t/state/ledger"
+MEMJOB_WAIT=1 mj 1; check "foreign claim whose cgroup exists: kept" 75 $?
+rm -r "$t/cg/user.slice/app.slice"
+reset; printf 'version 1\nwant 999999 1 %s %s 777 ns=%s\n' $((3*G)) $(( $(now) - 15 )) $OTHER >"$t/state/ledger"
+MEMJOB_WAIT=1 mj 1; check "fresh foreign want is held for" 75 $?
+reset; printf 'version 1\nwant 999999 1 %s %s 777 ns=%s\n' $((3*G)) $(( $(now) - 130 )) $OTHER >"$t/state/ledger"
+mj 1; check "foreign want past 120 s: dropped" 0 $?
+# an entry from this namespace (or with no ns) is still judged by its pid
+reset; printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope %s ns=%s t=%s\n' $((3*G)) "$NS" "$(now)" >"$t/state/ledger"
+mj 1; check "own-namespace claim of a dead pid: dropped" 0 $?
+# entries memjob writes carry the namespace
+reset; JOB_SECS=2 mj 1 & sleep 1; grep -q "^claim .* ns=$NS t=" "$t/state/ledger"; check "claims carry ns and time" 0 $?; wait
 
 # if budget fails, the job starts without admission control, with a warning
 reset; mv "$t/bin/budget" "$t/bin/budget.real"; printf '#!/bin/sh\nexit 1\n' >"$t/bin/budget"; chmod +x "$t/bin/budget"
