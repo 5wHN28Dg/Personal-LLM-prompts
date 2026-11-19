@@ -10,8 +10,9 @@
 # session on the machine ($XDG_RUNTIME_DIR/go-wide/ledger), under one lock, against the
 # machine's FREE memory from budget, so two sessions can never both take the same memory.
 # The claim lasts as long as this process (systemd-run --scope keeps its pid). If the limit
-# doesn't fit, memjob waits in line, up to MEMJOB_WAIT seconds (default 20); the oldest
-# waiting job has its memory held for it, so smaller later jobs can't starve it. Exit 75:
+# doesn't fit, memjob waits in line, up to MEMJOB_WAIT seconds (default 20). Jobs ahead in
+# line have their memory held for them: jobs waiting 10 s or more, then jobs of sessions below
+# their fair share, then the rest; a session's own jobs keep their order. Exit 75:
 # refused (not free in time, or more than could ever be free); nothing was started.
 S=$(cd "$(dirname "$0")" && pwd)
 kind=; [ "$1" = --long ] && { kind=long-; shift; }
@@ -96,8 +97,11 @@ admit() (
       for (i=1; i<=w; i++) { C[i]=D[i]
         for (j=1; j<=w; j++) if (j!=i && X[j]==X[i] && older(j, i) && D[j]>C[i]) C[i]=D[j] }
       for (i=1; i<w; i++) {
-        # within one session, oldest first; between sessions, by priority, then oldest
-        if (X[i]==X[w] ? older(i, w) : (C[i]<C[w] || (C[i]==C[w] && older(i, w)))) h+=B[i]
+        # within one session, oldest first; between sessions, by priority, then oldest. A
+        # newer job ahead only by priority is held for only if it could start now: memory
+        # never sits idle for a job that cannot use it yet (aging still protects it)
+        if (X[i]==X[w]) { if (older(i, w)) h+=B[i] }
+        else if (C[i]<C[w] || (C[i]==C[w] && older(i, w))) { if (older(i, w) || B[i]<=free*g) h+=B[i] }
       }
       printf "%.0f", h }' "$STATE/ledger")
   verdict=$(awk -v b="$bytes" -v f="$FREE" -v c="$CEILING" -v h="$held" 'BEGIN {
@@ -134,7 +138,7 @@ if command -v flock >/dev/null; then
     if [ $((now - t0)) -ge "$wait_max" ]; then
       withdraw
       if [ "$v" = busy ]; then why="the ledger stayed locked"
-      else why="free now $free GiB, $held GiB of it held for jobs waiting longer"; fi
+      else why="free now $free GiB, $held GiB of it held for jobs ahead of it"; fi
       echo "memjob: refused: $lim GiB not free after $wait_max s ($why); retry later, use a smaller limit, or raise MEMJOB_WAIT" >&2
       exit 75
     fi

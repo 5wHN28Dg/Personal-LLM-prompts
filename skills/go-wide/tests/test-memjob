@@ -127,7 +127,7 @@ printf '#!/bin/sh\necho $(( $(/bin/date +%%s) - 3600 ))\n' >"$t/bin/date"; chmod
 s0=$(awk '{print int($1)}' /proc/uptime); MEMJOB_WAIT=3 mj 3; r=$?
 s1=$(awk '{print int($1)}' /proc/uptime); rm "$t/bin/date"
 check "clock stepped back: wait still ends" "75 short" "$r $([ $((s1 - s0)) -le 12 ] && echo short || echo long)"
-grep -q 'held for jobs waiting longer' "$t/err"; check "refusal says how much is held for others" 0 $?
+grep -q 'held for jobs ahead of it' "$t/err"; check "refusal says how much is held for others" 0 $?
 
 # hand-edited ledger: a last line without a newline is kept, a malformed claim is dropped
 reset; sleep 60 & p=$!; pids=$p; st=$(sed 's/.*) //' /proc/$p/stat | awk '{print $20}')
@@ -168,6 +168,17 @@ MEMJOB_WAIT=1 mj 1; check "old-format want is still served in turn" 75 $?
 reset; echo "version 1" >"$t/state/ledger"; holder claim 'memjob-$(touch${IFS}'"$t"'/pwned)-1-1.scope '"$((3*G))"
 MEMJOB_WAIT=1 mj 1; check "crafted ledger line: still admission-controlled" 75 $?
 check "...and nothing ran" no "$([ -e "$t/pwned" ] && echo yes || echo no)"
+
+# memory isn't held for a newer job ahead by priority that can't start yet: 777 (holding
+# nothing) waits for 1.6 GiB, but only 1.5 is free while this session holds 2 GiB
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-$ME-1-1.scope $((2*G))"
+holder want "$((16*G/10)) $(( $(now) + 5 )) 777"
+MEMJOB_WAIT=3 mj 1; check "no memory held for a job that can't start yet" 0 $?
+# several sessions with reserves: 777 holds 1, 888 holds 1 (FREE 1.5, fair (1.5+2)/3 = 1.17);
+# 777 waits for 1 more (would be at 2, over); this session's 1 GiB (at 1, under) goes first
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $G"; holder claim "memjob-888-1-1.scope $G"
+holder want "$G $(( $(now) - 2 )) 777"
+MEMJOB_WAIT=1 mj 1; check "fair share with several sessions holding memory" 0 $?
 
 # budget reports each session's reserve
 reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $((2*G))"
