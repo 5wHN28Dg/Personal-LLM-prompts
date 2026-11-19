@@ -78,28 +78,37 @@ STATE=${GO_WIDE_STATE:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/go-wide}
 # (always the real /proc: a test hook must not make other sessions' claims look dead)
 pstart() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'; }
 # live <kind> <pid> <start> <ns> <time> <unit>: is a ledger entry live? Entries carry the pid
-# namespace that wrote them (ns=); a pid only means something in its own namespace. Entries
-# from another namespace (a sandbox or container sharing XDG_RUNTIME_DIR) are kept while their
-# job's cgroup exists; otherwise a claim lasts 60 s and a want 120 s from its time, on the
-# boot clock, so a vanished namespace can't hold memory for good. No ns: written here.
+# namespace that wrote them (ns=) and when (t=, boot clock); a claim's are on its "meta" line,
+# so readers from older versions, which parse claim lines by position, aren't affected. A pid
+# only means something in its own namespace. Entries from another namespace (a sandbox or
+# container sharing XDG_RUNTIME_DIR) are kept while their job's cgroup exists; otherwise a
+# claim lasts 60 s and a want 120 s from its time (a want refreshes it while waiting). A time
+# in the future means another clock (a container's): expired. No ns: written here.
 myns=$(readlink /proc/self/ns/pid 2>/dev/null | tr -dc 0-9)
 live() {
   case "$3" in ''|*[!0-9]*) return 1 ;; esac   # malformed
   if [ -z "$4" ] || [ "$4" = "$myns" ]; then [ "$(pstart "$2")" = "$3" ]; return; fi
-  [ "$1" = claim ] && [ -n "$6" ] &&
-    [ -n "$(find "$CG/user.slice" -maxdepth 5 -type d -name "$6" 2>/dev/null | head -1)" ] && return 0
+  case "$6" in *[*?[]*) ;; memjob-*.scope)
+    [ -n "$(find "$CG/user.slice" -maxdepth 5 -type d -name "$6" 2>/dev/null | head -1)" ] && return 0 ;; esac
   case "$5" in ''|*[!0-9]*) return 1 ;; esac
   [ "$1" = want ] && ttl=120 || ttl=60
-  [ $(( $(awk '{print int($1)}' /proc/uptime) - $5 )) -lt "$ttl" ]
+  age=$(( $(awk '{print int($1)}' /proc/uptime) - $5 ))
+  [ "$age" -ge 0 ] && [ "$age" -lt "$ttl" ]
 }
-# entry_live <ledger line>: unpack a claim or want line and call live
+# entry_live <ledger line, with a claim's meta appended>: unpack it and call live
 entry_live() {
   set -f; set -- $1; set +f
   k=$1 p=$2 s=$3 ns='' tm='' u=''
   for f; do case "$f" in ns=*) ns=${f#ns=} ;; t=*) tm=${f#t=} ;; esac; done
-  [ "$k" = claim ] && u=$4 && tm=${tm:-}
-  [ "$k" = want ] && tm=$5
+  [ "$k" = claim ] && u=$4
+  [ "$k" = want ] && [ -z "$tm" ] && tm=$5
   live "$k" "$p" "$s" "$ns" "$tm" "$u"
+}
+# merged <ledger>: the ledger with each claim's meta appended to it, meta lines dropped
+merged() {
+  awk 'NR==FNR { if ($1=="meta") m[$2" "$3]=$4" "$5; next }
+    $1=="meta" { next }
+    $1=="claim" && (($2" "$3) in m) { print $0, m[$2" "$3]; next } { print }' "$1" "$1"
 }
 claimed=0 wanted=0 clres=
 if [ -r "$STATE/ledger" ]; then
@@ -117,7 +126,9 @@ if [ -r "$STATE/ledger" ]; then
     o=${x#memjob-}; o=${o%%-*}   # the owning session, from memjob-<session>-...
     case "$o" in ''|*[!0-9]*) o=0 ;; esac
     case "$m" in ''|max|*[!0-9]*) claimed=$((claimed + bytes)) clres="$clres $o:$bytes" ;; esac
-  done <"$STATE/ledger"
+  done <<LEDGER
+$(merged "$STATE/ledger")
+LEDGER
 fi
 # what running memjobs hold (anon) and may still grow into
 jobs=$(find "$CG/user.slice" -maxdepth 5 -type d -name 'memjob-*.scope' 2>/dev/null | while read -r d; do

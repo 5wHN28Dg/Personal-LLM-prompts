@@ -186,28 +186,43 @@ reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $
 check "budget's RESERVED per session" "\"777:$((2*G))\"" "$("$t/bin/budget" | sed -n 's/^RESERVED=//p')"
 
 # entries from another pid namespace: their pids mean nothing here, so they are not judged by
-# pid. A fresh foreign claim (no cgroup yet) is kept and counted; one older than 60 s without a
-# cgroup is dropped; one whose cgroup exists is kept; a foreign want lasts 120 s.
+# pid. A claim's namespace and time are on its meta line. A fresh foreign claim (no cgroup
+# yet) is kept and counted; one older than 60 s without a cgroup is dropped; one whose
+# cgroup exists is kept; a foreign want lasts 120 s from its last refresh; a time in the
+# future (another clock) counts as expired
 NS=$(readlink /proc/self/ns/pid | tr -dc 0-9); OTHER=$((NS + 1))
-reset; printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope %s ns=%s t=%s\n' $((3*G)) $OTHER "$(now)" >"$t/state/ledger"
+fclaim() { printf 'version 1\nclaim 999999 1 %s %s\nmeta 999999 1 ns=%s t=%s\n' "$1" $((3*G)) $OTHER "$2" >"$t/state/ledger"; }
+reset; fclaim memjob-9-1-1.scope "$(now)"
 MEMJOB_WAIT=1 mj 1; check "fresh claim from another namespace still counts" 75 $?
-check "...and is kept" 1 "$(ledger claim)"
-reset; printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope %s ns=%s t=%s\n' $((3*G)) $OTHER $(( $(now) - 61 )) >"$t/state/ledger"
+check "...and is kept, with its meta" "1 1" "$(ledger claim) $(ledger meta)"
+reset; fclaim memjob-9-1-1.scope $(( $(now) - 61 ))
 mj 1; check "foreign claim past 60 s without a cgroup: dropped" 0 $?
-check "...from the ledger" 1 "$(ledger claim)"
+check "...with its meta" 0 "$(grep -c '^meta 999999' "$t/state/ledger")"
 reset; mkdir -p "$t/cg/user.slice/app.slice/memjob-9-1-1.scope"; echo max >"$t/cg/user.slice/app.slice/memjob-9-1-1.scope/memory.max"
-printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope %s ns=%s t=%s\n' $((3*G)) $OTHER $(( $(now) - 61 )) >"$t/state/ledger"
+fclaim memjob-9-1-1.scope $(( $(now) - 61 ))
 MEMJOB_WAIT=1 mj 1; check "foreign claim whose cgroup exists: kept" 75 $?
 rm -r "$t/cg/user.slice/app.slice"
-reset; printf 'version 1\nwant 999999 1 %s %s 777 ns=%s\n' $((3*G)) $(( $(now) - 15 )) $OTHER >"$t/state/ledger"
-MEMJOB_WAIT=1 mj 1; check "fresh foreign want is held for" 75 $?
-reset; printf 'version 1\nwant 999999 1 %s %s 777 ns=%s\n' $((3*G)) $(( $(now) - 130 )) $OTHER >"$t/state/ledger"
-mj 1; check "foreign want past 120 s: dropped" 0 $?
+reset; mkdir -p "$t/cg/user.slice/app.slice/other.scope"; fclaim '*' $(( $(now) - 61 ))
+mj 1; check "foreign claim with a glob for a unit: not kept by matching any cgroup" 0 $?
+rm -r "$t/cg/user.slice/app.slice"
+reset; fclaim memjob-9-1-1.scope $(( $(now) + 86400 ))
+mj 1; check "foreign claim with a time in the future: expired" 0 $?
+reset; printf 'version 1\nwant 999999 1 %s %s 777 ns=%s t=%s\n' $((3*G)) $(( $(now) - 300 )) $OTHER $(( $(now) - 15 )) >"$t/state/ledger"
+MEMJOB_WAIT=1 mj 1; check "foreign want refreshed recently is held for, though it arrived long ago" 75 $?
+reset; printf 'version 1\nwant 999999 1 %s %s 777 ns=%s t=%s\n' $((3*G)) $(( $(now) - 300 )) $OTHER $(( $(now) - 130 )) >"$t/state/ledger"
+mj 1; check "foreign want not refreshed for 120 s: dropped" 0 $?
 # an entry from this namespace (or with no ns) is still judged by its pid
-reset; printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope %s ns=%s t=%s\n' $((3*G)) "$NS" "$(now)" >"$t/state/ledger"
+reset; printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope %s\nmeta 999999 1 ns=%s t=%s\n' $((3*G)) "$NS" "$(now)" >"$t/state/ledger"
 mj 1; check "own-namespace claim of a dead pid: dropped" 0 $?
-# entries memjob writes carry the namespace
-reset; JOB_SECS=2 mj 1 & sleep 1; grep -q "^claim .* ns=$NS t=" "$t/state/ledger"; check "claims carry ns and time" 0 $?; wait
+# claim lines keep their old shape (older readers parse them by position); tags go on meta
+reset; JOB_SECS=2 mj 1 & sleep 1
+check "claim line has exactly 5 fields" 5 "$(awk '$1=="claim" {print NF}' "$t/state/ledger")"
+grep -q "^meta [0-9]* [0-9]* ns=$NS t=[0-9]*$" "$t/state/ledger"; check "...and a meta line with ns and time" 0 $?
+# older go-wide versions (main before this change) still work with this ledger
+mkdir -p "$t/old"; git -C "$here" show 4719761:skills/go-wide/scripts/budget >"$t/old/budget" 2>/dev/null &&
+  { out=$(sh "$t/old/budget" 2>&1); r=$?
+    check "an older budget still reads this ledger" "0 FREE" "$r $(echo "$out" | grep -o '^FREE' )"; }
+wait
 
 # if budget fails, the job starts without admission control, with a warning
 reset; mv "$t/bin/budget" "$t/bin/budget.real"; printf '#!/bin/sh\nexit 1\n' >"$t/bin/budget"; chmod +x "$t/bin/budget"
