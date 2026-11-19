@@ -51,7 +51,8 @@ up=$(awk '{print int($1)}' "$PROC/uptime" 2>/dev/null)
 hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
 mono=$(python3 -c 'import time; print(int(time.monotonic()))' 2>/dev/null)
 long_age() {
-  newest=$(for p in $(cat "$1/cgroup.procs" 2>/dev/null); do
+  # every process of the job, including any in sub-groups a process created inside the scope
+  newest=$(for p in $(find "$1" -name cgroup.procs -exec cat {} + 2>/dev/null); do
     sed 's/.*) //' "$PROC/$p/stat" 2>/dev/null | awk '{print $20}'; done | sort -n | tail -1)
   start=$(systemctl --user show -p ActiveEnterTimestampMonotonic --value "${1##*/}" 2>/dev/null)
   for v in "$newest" "$up" "$mono" "$start"; do   # anything unknown: young

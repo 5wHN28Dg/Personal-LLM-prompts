@@ -94,6 +94,19 @@ check "--long memjob just before a suspend is young" 4 "$(jb)"
 # a server restarted inside the job a minute ago is young again, though the job is an hour old
 setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600 0 60
 check "--long memjob restarted inside its scope is young" 4 "$(jb)"
+# the newest of several processes counts: an old one and one restarted a minute ago
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600; d=$t/cg/user.slice/app.slice/memjob-9-long-1.scope
+mkdir -p "$t/proc/555"; echo "555 (a) b) c) S 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 $(( (100000 - 60) * hz )) 0 0" >"$t/proc/555/stat"
+echo 555 >>"$d/cgroup.procs"
+check "newest process counts (comm with parentheses)" 4 "$(jb)"
+# ...also when it sits in a sub-group created inside the scope
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600; d=$t/cg/user.slice/app.slice/memjob-9-long-1.scope
+mkdir -p "$t/proc/556" "$d/sub"; echo "556 (srv) S 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 $(( (100000 - 60) * hz )) 0 0" >"$t/proc/556/stat"
+echo 556 >"$d/sub/cgroup.procs"
+check "newest process in a sub-group counts" 4 "$(jb)"
+# a process that started after the clock was read (negative age) counts as young
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600 0 -5
+check "process newer than the clock reading: young" 4 "$(jb)"
 # without a monotonic clock (no python3) or the job's start from systemd, it counts as young
 setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600
 check "no monotonic clock: young" 4 "$(STUB_MONO=; jb)"
