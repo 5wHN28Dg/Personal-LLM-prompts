@@ -16,10 +16,10 @@ setup() {
   rm -rf "$t/cg"; mkdir -p "$t/cg/user.slice/app.slice"
   printf 'MemTotal: %d kB\nMemAvailable: %d kB\n' 39321600 24326963 >"$t/meminfo"
 }
-# job <name> <limit bytes> <anon bytes> <age seconds>
+# job <name> <limit bytes> <anon bytes> <age seconds> [shmem bytes]
 job() {
   d=$t/cg/user.slice/app.slice/$1.scope; mkdir -p "$d"
-  echo "$2" >"$d/memory.max"; printf 'anon %d\nfile 0\n' "$3" >"$d/memory.stat"
+  echo "$2" >"$d/memory.max"; printf 'anon %d\nfile %d\nshmem %d\n' "$3" "${5:-0}" "${5:-0}" >"$d/memory.stat"
   touch -d "@$(( $(date +%s) - $4 ))" "$d"
 }
 jb1() {  # uses $STUB_SESSIONS as set by the caller
@@ -63,6 +63,12 @@ check "one session, --long memjob" 11 "$(STUB_SESSIONS=101; export STUB_SESSIONS
 # ...and the same job when young promises all 4 GiB: (23.2 - 4 - 7.5 - 2.5) / 2 = 4.6
 setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 60
 check "young --long memjob promises its whole headroom" 4 "$(jb)"
+
+# shared memory counts as held for a --long job: 8 GiB limit, 40 MiB anon + 4 GiB shmem
+# holds 4.04 GiB and may grow to 1.5 x 4.04 = 6.06, so 2.02 GiB is promised (anon alone would
+# give only 0.47): (23.2 - 2.02 - 10) / 2 = 5.59
+setup; job memjob-9-long-1 $((8*GiB)) $((40*MiB)) 3600 $((4*GiB))
+check "--long memjob growing in shared memory" 5 "$(jb)"
 
 # the 10-minute boundary: 9 minutes is young, 11 minutes is old
 setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 540
