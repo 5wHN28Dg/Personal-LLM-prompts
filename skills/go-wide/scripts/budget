@@ -37,15 +37,17 @@ sessions=$(echo $live | wc -w)
 me=$("$S/findagent" 2>/dev/null)
 case "$live" in *" $me "*) ;; *) [ -n "$me" ] && sessions=$((sessions+1)) ;; esac
 [ "$sessions" -ge 1 ] || sessions=1
-# memory already promised to running memjobs but not used yet. The scope folder is created
-# when the job starts, so its modification time is the job's start time.
+# memory already promised to running memjobs but not used yet. A job's start time is the
+# modification time of its cgroup.type file: created with the group and never written for a
+# memjob. Not the folder's: enabling a controller on the parent (any delegated unit, such as
+# capself's scope, can do that) adds files to every group and resets their folders' times.
 now=$(date +%s)
 promised=$(find "$CG/user.slice" -maxdepth 5 -type d -name 'memjob-*.scope' 2>/dev/null | while read -r d; do
   # anon = memory the job really holds; its page cache already counts as available
   m=$(cat "$d/memory.max" 2>/dev/null); [ -n "$m" ] && [ "$m" != max ] || continue
   u=$(awk '$1=="anon" {print $2}' "$d/memory.stat" 2>/dev/null)
   case ${d##*/} in
-    memjob-*-long-*.scope) age=$((now - $(stat -c %Y "$d" 2>/dev/null || echo "$now")))
+    memjob-*-long-*.scope) age=$((now - $(stat -c %Y "$d/cgroup.type" 2>/dev/null || echo "$now")))
       # shared memory (tmpfs, shm, shared mmaps) can't be reclaimed either, so it counts as held
       sh=$(awk '$1=="shmem" {print $2}' "$d/memory.stat" 2>/dev/null) ;;
     *) age=0 sh=0 ;;   # builds and tests: may still grow to their whole limit

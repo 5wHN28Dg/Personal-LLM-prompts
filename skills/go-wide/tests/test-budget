@@ -20,7 +20,8 @@ setup() {
 job() {
   d=$t/cg/user.slice/app.slice/$1.scope; mkdir -p "$d"
   echo "$2" >"$d/memory.max"; printf 'anon %d\nfile %d\nshmem %d\n' "$3" "${5:-0}" "${5:-0}" >"$d/memory.stat"
-  touch -d "@$(( $(date +%s) - $4 ))" "$d"
+  # the job's start time; the folder itself gets a fresh time, as when the parent enables a controller
+  touch -d "@$(( $(date +%s) - $4 ))" "$d/cgroup.type"
 }
 jb1() {  # uses $STUB_SESSIONS as set by the caller
   GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_MEMINFO=$t/meminfo "$t/bin/budget" | sed -n 's/^JOB_BUDGET=//p'
