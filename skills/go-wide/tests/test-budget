@@ -77,6 +77,10 @@ check "--long memjob at 9 minutes is young" 4 "$(jb)"
 setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 660
 check "--long memjob at 11 minutes is old" 5 "$(jb)"
 
+# an old --long job without cgroup.type (cgroup v1, kernels before 4.14) counts as young
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600; rm "$t/cg/user.slice/app.slice/memjob-9-long-1.scope/cgroup.type"
+check "--long memjob with no cgroup.type is young" 4 "$(jb)"
+
 # a memjob without a limit is skipped
 setup; job memjob-9-long-1 max $((4*GiB)) 3600
 check "memjob with no limit" 6 "$(jb)"
