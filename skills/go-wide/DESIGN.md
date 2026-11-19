@@ -29,13 +29,21 @@ Rejected: a shared parent slice for all memjobs with MemoryMax = total - floor a
 When it fired, the kernel killed the largest memjob, not the one that grew, and sometimes two
 (verified); and it rarely binds, because admission already keeps memjobs well below it.
 
-## Later: fair sharing between sessions (phase 2)
+## Built: fair sharing between sessions (phase 2)
 
 Built and rejected once (PR #5) when each session computed its share alone: sessions with different
-views could together hand out more than is free. With the ledger it can sit on top of the global
-check. Requirements from review: define a session's reserve as its jobs' limits (1.5 x held for aged
---long jobs); count only sessions that are waiting or running jobs; age wants so the oldest is
-admitted once it fits globally, whatever the shares; no heartbeats (pid + start time liveness).
+views could together hand out more than is free. On the ledger it only orders waiting jobs; the
+global "fits in FREE" check still decides whether anything starts, so it can't overcommit.
+
+- Fair share = (FREE + memory reserved by active sessions) / active sessions. A session's reserve
+  is its jobs' limits (what an aged --long job may grow to), plus claims not started yet
+  (`budget` prints it as RESERVED). Active = has a job running or waiting.
+- Among waiting jobs: those waiting 10 s or more go first (oldest first), so nothing starves; then
+  jobs that keep their session within its fair share; then the rest. Jobs of one session keep
+  their order. Memory for every waiting job ahead is held back. Alone, a session gets everything.
+- Nothing running is taken back: fairness acts as jobs finish, so it converges within a few job
+  lengths. Sessions are agent pids from the unit name or the want's session field; liveness is
+  pid + start time, no heartbeats.
 
 ## Rejected for now: SQM-style sharing (protect, throttle, pause)
 

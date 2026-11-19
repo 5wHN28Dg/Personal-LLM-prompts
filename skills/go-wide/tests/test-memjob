@@ -135,6 +135,28 @@ printf 'version 1\nclaim 4000000\n\njunk\nclaim %s %s memjob-9-1-1.scope %s' $p 
 MEMJOB_WAIT=1 mj 1; check "claim on an unterminated last line still counts" 75 $?
 grep -q '^claim 4000000' "$t/state/ledger"; check "malformed claim dropped" 1 $?
 
+# fair sharing between sessions. This test's own session is the one memjob will use.
+cg=$(cut -d: -f3 /proc/self/cgroup); ME=0
+case "$cg" in *-capped-*.scope) ME=${cg##*-capped-}; ME=${ME%.scope}; kill -0 "$ME" 2>/dev/null || ME=0 ;; esac
+G=1073741824; now() { awk '{print int($1)}' /proc/uptime; }
+# session 777 holds 2 GiB (FREE 1.5) and waits for 1 GiB more; this session holds nothing.
+# Fair share: (1.5 + 2) / 2 = 1.75. 777 would go to 3 (over), this session to 1 (under):
+# this job goes first, though 777's want is older
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $((2*G))"
+holder want "$G $(( $(now) - 2 )) 777"
+MEMJOB_WAIT=1 mj 1; check "under-share session goes before an over-share one's older want" 0 $?
+# the other way round: this session holds the 2 GiB and 777 waits for 1: 777 goes first
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-$ME-1-1.scope $((2*G))"
+holder want "$G $(now) 777"
+MEMJOB_WAIT=1 mj 1; check "over-share session waits for an under-share one" 75 $?
+# once a want has waited 10 s it goes first, whatever the shares
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $((2*G))"
+holder want "$G $(( $(now) - 15 )) 777"
+MEMJOB_WAIT=1 mj 1; check "a want waiting 10 s goes first, whatever the shares" 75 $?
+# budget reports each session's reserve
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $((2*G))"
+check "budget's RESERVED per session" "\"777:$((2*G))\"" "$("$t/bin/budget" | sed -n 's/^RESERVED=//p')"
+
 # if budget fails, the job starts without admission control, with a warning
 reset; mv "$t/bin/budget" "$t/bin/budget.real"; printf '#!/bin/sh\nexit 1\n' >"$t/bin/budget"; chmod +x "$t/bin/budget"
 mj 3; check "budget failing: started anyway" 0 $?

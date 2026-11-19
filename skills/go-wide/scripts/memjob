@@ -28,7 +28,7 @@ esac
 pstart() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'; }
 # the boot clock never steps back, unlike the wall clock
 clock() { awk '{print int($1)}' /proc/uptime; }
-me=$$ st=$(pstart $$)
+me=$$ st=$(pstart $$) session=${root:-0}
 unit=memjob-${root:-0}-$kind$me-$st.scope
 bytes=$(awk -v g="$lim" 'BEGIN { printf "%.0f", g*1073741824 }')
 STATE=${GO_WIDE_STATE:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/go-wide}
@@ -57,23 +57,45 @@ admit() (
   FREE='' CEILING=''
   # one floor for every session: a caller's FLOOR_PCT may raise it, never lower it
   fp=${FLOOR_PCT:-20}; case "$fp" in ''|*[!0-9]*) fp=20 ;; esac; [ "$fp" -lt 20 ] && fp=20
-  eval "$(FLOOR_PCT=$fp "$S/budget" 2>/dev/null | grep -E '^(FREE|CEILING)=')"
+  RESERVED=''
+  eval "$(FLOOR_PCT=$fp "$S/budget" 2>/dev/null | grep -E '^(FREE|CEILING|RESERVED)=')"
   # budget failed: admit without control (as before the ledger existed), and say so
   case "$FREE" in ''|*[!0-9.]*) echo nolock; exit ;; esac
   case "$CEILING" in ''|*[!0-9.]*) echo nolock; exit ;; esac
-  # memory held for jobs that have been waiting longer than this one (first come, first
-  # served; ties broken by start time, then pid). This one's place: its own want, or now.
-  mine=$(awk -v me="$me" '$1=="want" && $2==me {print $5, $3, $2; exit}' "$STATE/ledger")
-  [ -n "$mine" ] || mine="$(clock) $st $me"
-  held=$(awk -v me="$me" -v mine="$mine" 'BEGIN { split(mine, m, " ") }
-    $1=="want" && $2!=me && ($5<m[1] || ($5==m[1] && ($3<m[2] || ($3==m[2] && $2<m[3])))) { h+=$4 }
-    END { printf "%.0f", h }' "$STATE/ledger")
+  # Who goes first among waiting jobs, highest priority first:
+  #  1. jobs that have waited 10 s or more, oldest first (no one waits forever);
+  #  2. jobs that keep their session within its fair share: (FREE + memory reserved by the
+  #     active sessions) / number of active sessions (those with jobs running or waiting);
+  #  3. the rest, oldest first.
+  # Jobs of one session keep their order (oldest first). Memory for every waiting job ahead
+  # of this one is held back. A session alone gets everything that fits.
+  now=$(clock)
+  mine=$(awk -v me="$me" '$1=="want" && $2==me {print $5; exit}' "$STATE/ledger")
+  held=$(awk -v me="$me" -v sess="$session" -v b="$bytes" -v st="$st" -v since="${mine:-$now}" \
+      -v now="$now" -v free="$FREE" -v res="$RESERVED" '
+    BEGIN { g=1073741824; k=split(res, r, " "); for (i=1; i<=k; i++) { split(r[i], f, ":"); R[f[1]]=f[2] }
+            n=0 }
+    $1=="want" { w++; P[w]=$2; S[w]=$3; B[w]=$4; T[w]=$5; X[w]=($6=="" ? "p" $2 : $6) }
+    END {
+      w++; P[w]=me; S[w]=st; B[w]=b; T[w]=since; X[w]=sess   # this job, as if waiting
+      for (o in R) if (R[o]>0) A[o]=1
+      for (i=1; i<=w; i++) A[X[i]]=1
+      tot=free*g; for (o in A) { n++; tot+=R[o] }
+      fair=tot/n
+      for (i=1; i<=w; i++) C[i]=(now-T[i]>=10 ? 0 : (R[X[i]]+B[i]<=fair ? 1 : 2))
+      for (i=1; i<w; i++) {
+        if (P[i]==me) continue
+        older=(T[i]<T[w] || (T[i]==T[w] && (S[i]<S[w] || (S[i]==S[w] && P[i]<P[w]))))
+        # within one session, oldest first; between sessions, by priority, then oldest
+        if (X[i]==X[w] ? older : (C[i]<C[w] || (C[i]==C[w] && older))) h+=B[i]
+      }
+      printf "%.0f", h }' "$STATE/ledger")
   verdict=$(awk -v b="$bytes" -v f="$FREE" -v c="$CEILING" -v h="$held" 'BEGIN {
     g=1073741824; if (b > c*g) print "refuse"; else if (b <= f*g - h) print "ok"; else print "wait" }')
   { awk -v me="$me" '!($1=="want" && $2==me)' "$STATE/ledger"
     case "$verdict" in
       ok) echo "claim $me $st $unit $bytes" ;;
-      wait) echo "want $me $st $bytes ${mine%% *}" ;;
+      wait) echo "want $me $st $bytes ${mine:-$now} $session" ;;
     esac; } >"$tmp" && mv "$tmp" "$STATE/ledger" || { rm -f "$tmp"; echo nolock; exit; }
   echo "$verdict $FREE $CEILING $(awk -v h="$held" 'BEGIN { printf "%.2f", h/1073741824 }')"
 )
