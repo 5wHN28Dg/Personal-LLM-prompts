@@ -10,13 +10,15 @@
 #               go-wide sessions on this machine (SESSIONS). Each session's fair share counts
 #               what its own running memjobs may still grow into, so a session whose jobs
 #               already hold a lot gets less and the others get more; the shares together
-#               never exceed what is free. With no memjobs running, it's an even split.
+#               never exceed what is free. With no memjobs running, it's an even split. A
+#               session that can't tell which one it is gets the smallest share.
 #               0 = start nothing.
 #               A memjob may grow to its whole limit, except a long-running one (started
 #               with memjob --long: a server that doesn't rebuild) that is older than 10
 #               minutes: it is expected to grow to at most 1.5 times what it holds now
 #               (anon plus shared memory), at least 512 MiB, never above its limit.
-# GO_WIDE_CGROUP_ROOT and GO_WIDE_MEMINFO replace /sys/fs/cgroup and /proc/meminfo (tests).
+# GO_WIDE_CGROUP_ROOT, GO_WIDE_MEMINFO and GO_WIDE_SELF_CGROUP replace /sys/fs/cgroup,
+# /proc/meminfo and /proc/self/cgroup (tests).
 FLOOR_PCT=${FLOOR_PCT:-20}
 CG=${GO_WIDE_CGROUP_ROOT:-/sys/fs/cgroup}
 read_kb() { awk -v k="$1:" '$1==k {print $2}' "${GO_WIDE_MEMINFO:-/proc/meminfo}"; }
@@ -37,8 +39,13 @@ fi
 S=$(cd "$(dirname "$0")" && pwd)
 live=" $("$S/sessions" | tr '\n' ' ') "
 sessions=$(echo $live | wc -w)
-# count this session too if it isn't capped or watched yet (step 1 runs before capself)
-me=$("$S/findagent" 2>/dev/null)
+# this session: the agent pid of the capped scope it runs in (as memjob names its jobs), else
+# findagent. Count it too if it isn't capped or watched yet (step 1 runs before capself)
+me=
+cg=$(cut -d: -f3 "${GO_WIDE_SELF_CGROUP:-/proc/self/cgroup}" 2>/dev/null)
+case "$cg" in *-capped-*.scope) me=${cg##*-capped-}; me=${me%.scope}
+  case "$live" in *" $me "*) ;; *) me= ;; esac ;; esac   # its agent has exited
+[ -n "$me" ] || me=$("$S/findagent" 2>/dev/null)
 case "$live" in *" $me "*) ;; *) [ -n "$me" ] && sessions=$((sessions+1)) ;; esac
 [ "$sessions" -ge 1 ] || sessions=1
 # memory already promised to running memjobs but not used yet. The scope folder is created
@@ -75,8 +82,12 @@ awk -v t="$total" -v a="$avail" -v pct="$FLOOR_PCT" -v cores="$cores" -v n="$ses
   if (me!="" && !seen) { L[++k]=me; held+=po[me] }
   fair=(free+held)/n; sum=0
   for (i=1; i<=k; i++) { g[L[i]]=fair-po[L[i]]; if (g[L[i]]<0) g[L[i]]=0; sum+=g[L[i]] }
-  if (me=="" || k==0) jb=free/n       # this session is unknown: even split, as before
-  else { jb=g[me]; if (sum>free) jb=(free>0 ? jb*free/sum : 0) }
+  if (k==0) jb=free/n
+  else {
+    if (me!="") jb=g[me]
+    else { jb=g[L[1]]; for (i=2; i<=k; i++) if (g[L[i]]<jb) jb=g[L[i]] }   # unknown: smallest share
+    if (sum>free) jb=(free>0 ? jb*free/sum : 0)
+  }
   jb=int(jb); if (jb<0) jb=0
   printf "TOTAL=%.1f\nAVAILABLE=%.1f\nFLOOR=%.1f\nCAP=%d\nJOB_BUDGET=%d\nSESSIONS=%d\n", t, a, floor, cap, jb, n
   printf "WARN_AVAIL=%.1f\nCRIT_AVAIL=%.1f\nRECOVER_AVAIL=%.1f\n", floor+2.5, floor+0.5, floor+4.5

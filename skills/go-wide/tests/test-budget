@@ -22,8 +22,9 @@ job() {
   echo "$2" >"$d/memory.max"; printf 'anon %d\nfile %d\nshmem %d\n' "$3" "${5:-0}" "${5:-0}" >"$d/memory.stat"
   touch -d "@$(( $(date +%s) - $4 ))" "$d"
 }
+echo "0::/user.slice/app.slice/terminal.scope" >"$t/self-cgroup"   # not capped
 jb1() {  # uses $STUB_SESSIONS as set by the caller
-  GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_MEMINFO=$t/meminfo "$t/bin/budget" | sed -n 's/^JOB_BUDGET=//p'
+  GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_MEMINFO=$t/meminfo GO_WIDE_SELF_CGROUP=${SELF_CG:-$t/self-cgroup} "$t/bin/budget" | sed -n 's/^JOB_BUDGET=//p'
 }
 jb() { STUB_SESSIONS="101 102"; export STUB_SESSIONS; jb1; }
 check() {  # check <description> <expected> <actual>
@@ -102,12 +103,30 @@ check "fair shares add up to what is free" 6 "$(jbme)"
 # from 102's side the same machine gives 2
 setup; job memjob-102-1 $((8*GiB)) $((4*GiB)) 60
 check "the other session's share" 2 "$(STUB_ME=102 STUB_SESSIONS="101 102"; export STUB_ME STUB_SESSIONS; jb1)"
-# orphaned jobs (owner 999 isn't a live session) reduce what is free for everyone: 1.2 / 2 = 0.6
-setup; for n in 1 2 3; do job memjob-999-$n $((4*GiB)) $((3*MiB)) 60; done
-check "orphaned jobs' reserve is shared" 0 "$(jbme)"
+# orphaned jobs (owner 999 isn't a live session) reduce what is free for everyone:
+# (23.2 - 4 - 10) / 2 = 4.6 (charged to this session it would be 2.6)
+setup; job memjob-999-1 $((8*GiB)) $((4*GiB)) 60
+check "orphaned jobs' reserve is shared" 4 "$(jbme)"
 # this session isn't capped or watched yet (not in the sessions list) but is counted
 setup; for n in 1 2 3; do job memjob-102-$n $((4*GiB)) $((3*MiB)) 60; done
 check "this session not yet listed" 1 "$(STUB_ME=101 STUB_SESSIONS=102; export STUB_ME STUB_SESSIONS; jb1)"
+
+# three sessions, 102 holds 6 GiB of reserve: free = 23.2 - 6 - 10 = 7.2, each is due
+# (7.2 + 6) / 3 = 4.4; 102's share is below 0 (clamped), 101 and 103 get 4.4 each = 8.8 > 7.2,
+# so both are scaled to 3.6; together 0 + 3 + 3 never exceeds what is free
+three() { STUB_ME=$1 STUB_SESSIONS="101 102 103"; export STUB_ME STUB_SESSIONS; jb1; }
+setup; job memjob-102-1 $((8*GiB)) $((2*GiB)) 60
+check "three sessions, this one" 3 "$(three 101)"
+check "three sessions, the one holding the reserve" 0 "$(three 102)"
+check "three sessions, the third" 3 "$(three 103)"
+# a session that can't tell which one it is gets the smallest share (0 here), not 7.2 / 3
+check "unidentified session gets the smallest share" 0 "$(three '')"
+# the capped scope names this session even when findagent says otherwise
+echo "0::/user.slice/app.slice/agent-capped-102.scope" >"$t/capped-cgroup"
+check "session taken from its capped scope" 0 "$(SELF_CG=$t/capped-cgroup three 101)"
+# ...unless that scope's agent isn't live any more: then findagent decides
+echo "0::/user.slice/app.slice/agent-capped-555.scope" >"$t/capped-cgroup"
+check "stale capped scope falls back to findagent" 3 "$(SELF_CG=$t/capped-cgroup three 101)"
 
 # memjob --long names the unit memjob-<owner>-long-<n>, which budget recognizes and from which
 # memwatch's owner parsing (memjob-<owner>-...) still gets the owner; without --long, no "long".
