@@ -3,14 +3,20 @@
 # The group is created holding only the agent itself; its descendants are then moved in one
 # at a time. Handing systemd the whole tree in one request doesn't work: it rejects the
 # request if any listed process has exited, and this script's own helpers (pstree, grep)
-# are in the tree and always have. CAP_UNIT_PREFIX renames the unit (used by the tests).
+# are in the tree and always have. Descendants go through systemd too (AttachProcessesToUnit),
+# which can also move them out of a login session's scope (SSH, text console); writing to
+# cgroup.procs directly can't. systemd only does that for a delegated unit, hence Delegate. Only processes still in the agent's original group are moved:
+# a memjob started earlier stays in its own kill-first group.
+# CAP_UNIT_PREFIX renames the unit (used by the tests).
 root=$1; lim=${2:-18}
+orig=$(cut -d: -f3 /proc/"$root"/cgroup) || exit 1
 unit=${CAP_UNIT_PREFIX:-agent-capped}-$root.scope
 tree() { pstree -pT "$root" | grep -o '([0-9]*)' | tr -d '()'; }
 busctl --user call org.freedesktop.systemd1 /org/freedesktop/systemd1 \
   org.freedesktop.systemd1.Manager StartTransientUnit 'ssa(sv)a(sa(sv))' \
-  "$unit" fail 3 \
+  "$unit" fail 4 \
   PIDs au 1 "$root" \
+  Delegate b true \
   MemoryMax t $((lim*1024*1024*1024)) \
   MemorySwapMax t $((1024*1024*1024)) 0 >/dev/null || exit 1
 # the request is only queued: wait until the agent is really in the group
@@ -20,14 +26,24 @@ until cg=$(cut -d: -f3 /proc/"$root"/cgroup 2>/dev/null) && [ "${cg##*/}" = "$un
   sleep 0.1
 done
 choom -p "$root" -n 500 >/dev/null 2>&1
-n=1
-# twice: a process that forked during the first pass left its child outside the group
-for _ in 1 2; do
+n=1 stuck=
+# repeat until a pass moves nothing: a process that forked during a pass left its child outside
+for _ in 1 2 3 4 5; do
+  moved=0
   for p in $(tree); do
-    [ "$(cut -d: -f3 /proc/"$p"/cgroup 2>/dev/null)" = "$cg" ] && continue   # already in
-    # a process that has exited can't be moved; that's fine
-    { echo "$p" >"/sys/fs/cgroup$cg/cgroup.procs"; } 2>/dev/null || continue
-    choom -p "$p" -n 500 >/dev/null 2>&1; n=$((n+1))
+    [ "$(cut -d: -f3 /proc/"$p"/cgroup 2>/dev/null)" = "$orig" ] || continue   # moved, gone, or another group
+    if busctl --user call org.freedesktop.systemd1 /org/freedesktop/systemd1 \
+        org.freedesktop.systemd1.Manager AttachProcessesToUnit ssau "$unit" "" 1 "$p" >/dev/null 2>&1; then
+      choom -p "$p" -n 500 >/dev/null 2>&1; n=$((n+1)) moved=1
+    elif [ "$(cut -d: -f3 /proc/"$p"/cgroup 2>/dev/null)" = "$orig" ]; then
+      stuck="$stuck $p"   # still alive and still outside: report it
+    fi
   done
+  [ $moved = 0 ] && break
 done
 echo "moved $n processes into $unit (MemoryMax=${lim}G)"
+for p in $(echo $stuck | tr ' ' '\n' | sort -u); do
+  [ "$(cut -d: -f3 /proc/"$p"/cgroup 2>/dev/null)" = "$orig" ] &&
+    echo "capagent: could not move $p ($(tr '\0' ' ' </proc/"$p"/cmdline | cut -c1-60)); it stays uncapped" >&2
+done
+exit 0

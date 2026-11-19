@@ -1,6 +1,7 @@
 #!/bin/sh
 # Test: capagent called from inside the tree it caps (how capself always calls it) must
-# create the group and move every live process of the tree into it.
+# create the group and move every live process of the tree into it (a child and a
+# grandchild), but leave a descendant that runs in its own group (like a memjob) there.
 # Uses a throwaway process tree and a unit name the other go-wide scripts don't look for,
 # so it never touches a real session. Needs a systemd user session with cgroup v2.
 S=$(cd "$(dirname "$0")/../scripts" && pwd)
@@ -10,14 +11,22 @@ fail=0
 for run in 1 2 3; do
   out=$(S=$S sh -c '
     sleep 60 & kid=$!
+    sh -c "sleep 60 & wait" & mid=$!
+    systemd-run --user --scope -q --collect --unit=gwtest-job-$$ sleep 60 & job=$!
+    i=0; until [ -n "$(pgrep -P $mid)" ] && cut -d: -f3 /proc/$job/cgroup | grep -q gwtest-job; do
+      i=$((i+1)); [ $i -gt 50 ] && break; sleep 0.1; done
+    grand=$(pgrep -P $mid)
     CAP_UNIT_PREFIX=gwtest "$S/capagent" $$ 1; echo "rc=$?"
-    for p in $$ $kid; do echo "cg $(cut -d: -f3 /proc/$p/cgroup)"; done
+    for p in $$ $kid $mid $grand; do echo "cg $(cut -d: -f3 /proc/$p/cgroup)"; done
+    echo "job $(cut -d: -f3 /proc/$job/cgroup)"
     echo "max=$(cat /sys/fs/cgroup$(cut -d: -f3 /proc/$$/cgroup)/memory.max)"
-    echo "root=$$"; kill $kid' 2>&1)
+    echo "root=$$"; kill $kid $grand $mid $job 2>/dev/null' 2>&1)
   root=$(echo "$out" | sed -n 's/^root=//p')
   ok=1
   echo "$out" | grep -qx 'rc=0' || ok=0
-  [ "$(echo "$out" | grep -c "^cg .*/gwtest-$root\.scope\$")" = 2 ] || ok=0
+  [ "$(echo "$out" | grep -c "^cg .*/gwtest-$root\.scope\$")" = 4 ] || ok=0
+  echo "$out" | grep -q "^job .*/gwtest-job-$root\.scope\$" || ok=0
+  echo "$out" | grep -q 'could not move' && ok=0
   echo "$out" | grep -qx "max=$((1024*1024*1024))" || ok=0
   if [ $ok = 1 ]; then echo "ok   run $run"; else echo "FAIL run $run"; echo "$out" | sed 's/^/     /'; fail=1; fi
 done
