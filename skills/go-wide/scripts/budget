@@ -6,8 +6,12 @@
 #   CAP         ceiling for this session's own processes: total minus floor. Fixed, so a
 #               session started while memory is busy isn't capped below what it already uses.
 #   JOB_BUDGET  memory you may give new memjobs right now: available, minus what running
-#               memjobs may still grow into, minus floor and a margin, split evenly across
-#               the live go-wide sessions on this machine (SESSIONS). 0 = start nothing.
+#               memjobs may still grow into, minus floor and a margin, shared among the live
+#               go-wide sessions on this machine (SESSIONS). Each session's fair share counts
+#               what its own running memjobs may still grow into, so a session whose jobs
+#               already hold a lot gets less and the others get more; the shares together
+#               never exceed what is free. With no memjobs running, it's an even split.
+#               0 = start nothing.
 #               A memjob may grow to its whole limit, except a long-running one (started
 #               with memjob --long: a server that doesn't rebuild) that is older than 10
 #               minutes: it is expected to grow to at most 1.5 times what it holds now
@@ -50,15 +54,30 @@ promised=$(find "$CG/user.slice" -maxdepth 5 -type d -name 'memjob-*.scope' 2>/d
       sh=$(awk '$1=="shmem" {print $2}' "$d/memory.stat" 2>/dev/null) ;;
     *) age=0 sh=0 ;;   # builds and tests: may still grow to their whole limit
   esac
-  echo "$m ${u:--1} $age ${sh:-0}"
+  o=${d##*/}; o=${o#memjob-}; case $o in *-*) o=${o%%-*} ;; *) o=none ;; esac   # owner
+  echo "$m ${u:--1} $age ${sh:-0} $o"
   done | awk '{ m=$1; u=$2+0; grow=m
     if (u<0) u=0   # unreadable use: keep the whole limit reserved
     else if ($3 >= 600) { u+=$4; grow=1.5*u; if (grow<536870912) grow=536870912; if (grow>m) grow=m }
-    if (grow>u) s+=grow-u } END { printf "%d", s/1024 }')
-awk -v t="$total" -v a="$avail" -v pct="$FLOOR_PCT" -v cores="$cores" -v n="$sessions" -v pr="${promised:-0}" 'BEGIN {
-  t/=1048576; a/=1048576; pr/=1048576; floor=t*pct/100
+    if (grow>u) p[$5]+=grow-u } END { for (o in p) printf "%s:%d ", o, p[o]/1024 }')
+awk -v t="$total" -v a="$avail" -v pct="$FLOOR_PCT" -v cores="$cores" -v n="$sessions" \
+    -v promised="$promised" -v live="$live" -v me="$me" 'BEGIN {
+  t/=1048576; a/=1048576; floor=t*pct/100
   cap=int(t-floor); if (cap<2) cap=2
-  jb=int((a-pr-floor-2.5)/n); if (jb<0) jb=0   # 2.5 = stay above the WARNING level
+  # promised per owner (GiB); owners are agent pids, "none" for jobs with no owner in the name
+  k=split(promised, items, " "); pr=0
+  for (i=1; i<=k; i++) { split(items[i], f, ":"); po[f[1]]=f[2]/1048576; pr+=f[2]/1048576 }
+  free=a-pr-floor-2.5   # 2.5 = stay above the WARNING level
+  # each live session is due an equal share of free plus what live sessions already hold in
+  # reserve, minus its own reserve; if those shares add up to more than free, scale them down
+  k=split(live, L, " "); seen=0; held=0
+  for (i=1; i<=k; i++) { held+=po[L[i]]; if (L[i]==me) seen=1 }
+  if (me!="" && !seen) { L[++k]=me; held+=po[me] }
+  fair=(free+held)/n; sum=0
+  for (i=1; i<=k; i++) { g[L[i]]=fair-po[L[i]]; if (g[L[i]]<0) g[L[i]]=0; sum+=g[L[i]] }
+  if (me=="" || k==0) jb=free/n       # this session is unknown: even split, as before
+  else { jb=g[me]; if (sum>free) jb=(free>0 ? jb*free/sum : 0) }
+  jb=int(jb); if (jb<0) jb=0
   printf "TOTAL=%.1f\nAVAILABLE=%.1f\nFLOOR=%.1f\nCAP=%d\nJOB_BUDGET=%d\nSESSIONS=%d\n", t, a, floor, cap, jb, n
   printf "WARN_AVAIL=%.1f\nCRIT_AVAIL=%.1f\nRECOVER_AVAIL=%.1f\n", floor+2.5, floor+0.5, floor+4.5
   printf "WARN_SCOPE=%.1f\nCRIT_SCOPE=%.1f\nMAX_JOBS=%d\n", cap*0.83, cap*0.94, cores

@@ -7,7 +7,7 @@ trap 'rm -rf "$t"' EXIT
 mkdir "$t/bin"
 cp "$here/../scripts/budget" "$t/bin/budget"
 printf '#!/bin/sh\nprintf "%%s\\n" $STUB_SESSIONS\n' >"$t/bin/sessions"
-printf '#!/bin/sh\nexit 1\n' >"$t/bin/findagent"
+printf '#!/bin/sh\n[ -n "$STUB_ME" ] && echo "$STUB_ME"\n' >"$t/bin/findagent"   # this session, if set
 chmod +x "$t/bin/"*
 fail=0 GiB=1073741824 MiB=1048576
 
@@ -83,6 +83,31 @@ check "memjob with no limit" 6 "$(jb)"
 # an old --long job whose memory use can't be read keeps its whole limit: (23.2 - 8 - 10) / 2 = 2.6
 setup; job memjob-9-long-1 $((8*GiB)) 0 3600; : >"$t/cg/user.slice/app.slice/memjob-9-long-1.scope/memory.stat"
 check "old --long memjob with unreadable use" 2 "$(jb)"
+
+# fair split between sessions 101 (this one) and 102, by who holds the reserve
+jbme() { STUB_ME=101; STUB_SESSIONS="101 102"; export STUB_ME STUB_SESSIONS; jb1; }
+# nothing running: even split, as before: (23.2 - 10) / 2 = 6.6
+setup; check "fair split, nothing running" 6 "$(jbme)"
+# the report's case: session 102's three young 4 GiB jobs promise 12 GiB, free = 1.2 GiB.
+# Session 102 has used up its share, so this session gets all of the 1.2 (the even split gave 0.6)
+setup; for n in 1 2 3; do job memjob-102-$n $((4*GiB)) $((3*MiB)) 60; done
+check "other session holds the reserve" 1 "$(jbme)"
+# ...and when this session holds that reserve, it gets nothing
+setup; for n in 1 2 3; do job memjob-101-$n $((4*GiB)) $((3*MiB)) 60; done
+check "this session holds the reserve" 0 "$(jbme)"
+# session 102 holds 4 GiB of reserve: free = 23.2 - 4 - 10 = 9.2, each is due (9.2 + 4) / 2 = 6.6;
+# 102 gets 6.6 - 4 = 2.6 and this session 6.6, together exactly 9.2 (the even split gave 4.6)
+setup; job memjob-102-1 $((8*GiB)) $((4*GiB)) 60
+check "fair shares add up to what is free" 6 "$(jbme)"
+# from 102's side the same machine gives 2
+setup; job memjob-102-1 $((8*GiB)) $((4*GiB)) 60
+check "the other session's share" 2 "$(STUB_ME=102 STUB_SESSIONS="101 102"; export STUB_ME STUB_SESSIONS; jb1)"
+# orphaned jobs (owner 999 isn't a live session) reduce what is free for everyone: 1.2 / 2 = 0.6
+setup; for n in 1 2 3; do job memjob-999-$n $((4*GiB)) $((3*MiB)) 60; done
+check "orphaned jobs' reserve is shared" 0 "$(jbme)"
+# this session isn't capped or watched yet (not in the sessions list) but is counted
+setup; for n in 1 2 3; do job memjob-102-$n $((4*GiB)) $((3*MiB)) 60; done
+check "this session not yet listed" 1 "$(STUB_ME=101 STUB_SESSIONS=102; export STUB_ME STUB_SESSIONS; jb1)"
 
 # memjob --long names the unit memjob-<owner>-long-<n>, which budget recognizes and from which
 # memwatch's owner parsing (memjob-<owner>-...) still gets the owner; without --long, no "long".
