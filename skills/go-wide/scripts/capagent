@@ -42,6 +42,11 @@ for _ in 1 2 3 4 5; do
   [ $moved = 0 ] && break
 done
 echo "moved $n processes into $unit (MemoryMax=${lim}G)"
+for p in $(tree); do   # say what stays outside on purpose (memjobs are expected to)
+  c=$(cut -d: -f3 /proc/"$p"/cgroup 2>/dev/null) || continue
+  case "$c" in "$cg"|"$orig"|*/memjob-*.scope) ;; *)
+    echo "capagent: left $p in its own group ${c##*/}; it isn't capped" >&2 ;; esac
+done
 for p in $(echo $stuck | tr ' ' '\n' | sort -u); do
   [ "$(cut -d: -f3 /proc/"$p"/cgroup 2>/dev/null)" = "$orig" ] &&
     echo "capagent: could not move $p ($(tr '\0' ' ' </proc/"$p"/cmdline | cut -c1-60)); it stays uncapped" >&2
