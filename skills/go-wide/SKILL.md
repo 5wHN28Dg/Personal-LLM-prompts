@@ -18,8 +18,9 @@ Scripts: the `scripts/` folder next to this `SKILL.md` (called `$S` below). Reso
 
 ## 2. Heavy commands go through memjob
 
-Builds, links, test suites, browsers, dev servers, emulators and anything else that may take more than ~500 MB: `$S/memjob <GiB> <command…>`, with a realistic limit (2–4 GiB is typical). A job that exceeds its limit is killed alone; you and the user's desktop survive. Exit code 137 means it hit its limit: retry with a higher limit or less internal parallelism.
-- Keep the limits of the memjobs you start in a batch ≤ `JOB_BUDGET`. It already subtracts what running memjobs may still grow into, so rerun `$S/budget` before each new batch. `JOB_BUDGET=0` means start nothing new. Keep parallel compile/test processes ≤ `MAX_JOBS`. Cap link parallelism separately (`--link-jobs`, `-l`).
+Builds, links, test suites, browsers, dev servers, emulators and anything else that may take more than ~500 MB: `$S/memjob <GiB> <command…>`, with a realistic limit. A job that exceeds its limit is killed alone; you and the user's desktop survive. Exit code 137 means it hit its limit: retry with a higher limit or less internal parallelism.
+- Size the limit to the job. Builds, links and test suites: 2–4 GiB is typical. Long-running processes (dev servers, emulator back ends, file watchers): a small limit near what they really use, such as 0.5–1 GiB (`memjob 0.5 …`), raised only if one is killed for exceeding it. A large limit on an idle server holds memory back from every session on the machine.
+- Keep the limits of the memjobs you start in a batch ≤ `JOB_BUDGET`. It already subtracts what running memjobs may still grow into (a job's whole limit for its first 10 minutes, then about 1.5 times what it holds), so rerun `$S/budget` before each new batch. `JOB_BUDGET=0` means start nothing new. Keep parallel compile/test processes ≤ `MAX_JOBS`. Cap link parallelism separately (`--link-jobs`, `-l`).
 - Temp files: run commands with `TMPDIR=~/.cache/agent-tmp` (create it if missing). Never put large files in `/tmp` or `/dev/shm`; on many systems they're RAM, and killing a process doesn't free them. Delete temp files when each task finishes.
 - If you hand work to subagents, every subagent prompt must include: its memory share, its `-j`/`-n` limit, the memjob rule with the absolute path, and the temp-file rule.
 

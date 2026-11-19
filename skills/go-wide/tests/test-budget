@@ -1,0 +1,59 @@
+#!/bin/sh
+# usage: test-budget: check budget's JOB_BUDGET arithmetic against fake cgroups and meminfo.
+# Runs a copy of budget next to stub sessions/findagent scripts, so no real cgroup is read.
+here=$(cd "$(dirname "$0")" && pwd)
+t=$(mktemp -d "${TMPDIR:-/tmp}/go-wide-test.XXXXXX") || exit 1
+trap 'rm -rf "$t"' EXIT
+mkdir "$t/bin"
+cp "$here/../scripts/budget" "$t/bin/budget"
+printf '#!/bin/sh\nprintf "%%s\\n" $STUB_SESSIONS\n' >"$t/bin/sessions"
+printf '#!/bin/sh\nexit 1\n' >"$t/bin/findagent"
+chmod +x "$t/bin/"*
+fail=0 GiB=1073741824 MiB=1048576
+
+# machine like the one in the report: 37.5 GiB total, 23.2 GiB available
+setup() {
+  rm -rf "$t/cg"; mkdir -p "$t/cg/user.slice/app.slice"
+  printf 'MemTotal: %d kB\nMemAvailable: %d kB\n' 39321600 24326963 >"$t/meminfo"
+}
+# job <name> <limit bytes> <anon bytes> <age seconds>
+job() {
+  d=$t/cg/user.slice/app.slice/$1.scope; mkdir -p "$d"
+  echo "$2" >"$d/memory.max"; printf 'anon %d\nfile 0\n' "$3" >"$d/memory.stat"
+  touch -d "@$(( $(date +%s) - $4 ))" "$d"
+}
+jb() {
+  GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_MEMINFO=$t/meminfo STUB_SESSIONS="101 102" \
+    "$t/bin/budget" | sed -n 's/^JOB_BUDGET=//p'
+}
+check() {  # check <description> <expected> <actual>
+  if [ "$2" = "$3" ]; then echo "ok   $1 (JOB_BUDGET=$3)"
+  else echo "FAIL $1: expected JOB_BUDGET=$2, got $3"; fail=1; fi
+}
+
+# (23.2 - 7.5 - 2.5) / 2 = 6.6
+setup; check "no memjobs" 6 "$(jb)"
+
+# three 4 GiB idle servers (3 MiB each) running an hour: each reserves 512 MiB - 3 MiB
+# (23.2 - 1.5 - 7.5 - 2.5) / 2 = 5.8
+setup; for n in 1 2 3; do job memjob-9-$n $((4*GiB)) $((3*MiB)) 3600; done
+check "idle long-running memjobs" 5 "$(jb)"
+
+# the same jobs started a minute ago keep their whole limit: (23.2 - 12 - 7.5 - 2.5) / 2 = 0.6
+setup; for n in 1 2 3; do job memjob-9-$n $((4*GiB)) $((3*MiB)) 60; done
+check "young memjobs keep full reservation" 0 "$(jb)"
+
+# a long-running job near its limit is reserved as before: 1.5 x 3.5 GiB caps at 4 GiB,
+# so 0.5 GiB is promised: (23.2 - 0.5 - 7.5 - 2.5) / 2 = 6.35
+setup; job memjob-9-1 $((4*GiB)) $((3584*MiB)) 3600
+check "long-running memjob near its limit" 6 "$(jb)"
+
+# a long-running job using 2 GiB of 8 GiB: 1.5 x 2 = 3, so 1 GiB is promised, not 6:
+# (23.2 - 1 - 7.5 - 2.5) / 2 = 6.1
+setup; job memjob-9-1 $((8*GiB)) $((2*GiB)) 3600
+check "long-running memjob grows to 1.5 x anon" 6 "$(jb)"
+# ...and the same job when young promises all 6 GiB: (23.2 - 6 - 7.5 - 2.5) / 2 = 3.6
+setup; job memjob-9-1 $((8*GiB)) $((2*GiB)) 60
+check "young memjob promises its whole headroom" 3 "$(jb)"
+
+exit $fail
