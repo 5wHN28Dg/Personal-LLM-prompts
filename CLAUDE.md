@@ -1,5 +1,7 @@
-# Personal LLM prompts
+# Personal-LLM-prompts
 
-This is a do-the-work project (see the two kinds of project in my global instructions).
+Project kind: do the work (not a passion project).
 
-Tests: run `sh skills/go-wide/tests/test-capagent` after changing the go-wide scripts. It needs a systemd user session and only touches a throwaway process tree.
+Tests, after changing the go-wide scripts:
+- `TMPDIR=~/.cache/agent-tmp sh skills/go-wide/tests/test-budget` checks the memory budget arithmetic against fake cgroups.
+- `sh skills/go-wide/tests/test-capagent` needs a systemd user session and only touches a throwaway process tree.
