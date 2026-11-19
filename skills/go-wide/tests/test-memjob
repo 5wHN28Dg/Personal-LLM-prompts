@@ -14,6 +14,7 @@ printf '#!/bin/sh\nexit 1\n' >"$t/bin/findagent"
 cat >"$t/bin/systemd-run" <<'STUB'
 #!/bin/sh
 for a; do case "$a" in --unit=*) echo "${a#--unit=}" >>"$JOBLOG" ;; esac; done
+[ -n "$NAME" ] && echo "start $NAME" >>"$JOBLOG"
 if flock -n "$GO_WIDE_STATE/ledger.lock" true; then echo "lock free" >>"$JOBLOG"; else echo "lock held" >>"$JOBLOG"; fi
 sleep "${JOB_SECS:-0}"
 STUB
@@ -72,6 +73,36 @@ reset; mkdir -p "$t/cg/user.slice/app.slice/memjob-9-1-1.scope"; echo max >"$t/c
 echo "version 1" >"$t/state/ledger"; holder claim "memjob-9-1-1.scope $((2*1073741824))"
 check "claim counts until its cgroup has a limit" 1.50 "$("$t/bin/budget" | sed -n 's/^FREE=//p')"
 rm -r "$t/cg/user.slice/app.slice"
+
+# a claimed job whose cgroup has its limit is counted once, from the cgroup (2 GiB reserved)
+reset; mkdir -p "$t/cg/user.slice/app.slice/memjob-9-1-1.scope"; d=$t/cg/user.slice/app.slice/memjob-9-1-1.scope
+echo $((2*1073741824)) >"$d/memory.max"; echo "anon 0" >"$d/memory.stat"
+echo "version 1" >"$t/state/ledger"; holder claim "memjob-9-1-1.scope $((2*1073741824))"
+check "claim not counted twice once its cgroup has a limit" 1.50 "$("$t/bin/budget" | sed -n 's/^FREE=//p')"
+rm -r "$t/cg/user.slice/app.slice"
+
+# low memory (3 of 10 GiB available, below floor + margin): refused, never started unchecked
+reset; printf 'MemTotal: %d kB\nMemAvailable: %d kB\n' 10485760 3145728 >"$t/meminfo"
+mj 1; check "low memory: refused" 75 $?
+grep -q 'without admission control' "$t/err"; check "...not started without control" 1 $?
+printf 'MemTotal: %d kB\nMemAvailable: %d kB\n' 10485760 8388608 >"$t/meminfo"
+
+# first come, first served between real waiters: a 2.5 GiB claim leaves 1 GiB for 5 s;
+# A (3 GiB) starts waiting, then B (1 GiB, which would fit now). B must not jump ahead,
+# and A must not be held back by B: A starts once the claim ends, then B after A's job.
+reset; echo "version 1" >"$t/state/ledger"; sleep 5 & p=$!; pids=$p
+echo "claim $p $(sed 's/.*) //' /proc/$p/stat | awk '{print $20}') memjob-9-1-1.scope $((5*1073741824/2))" >>"$t/state/ledger"
+( export MEMJOB_WAIT=20 JOB_SECS=2; NAME=A mj 3 & sleep 1; NAME=B mj 1 & wait ) 2>/dev/null
+check "first come, first served" "start A start B" "$(grep '^start' "$JOBLOG" | tr '\n' ' ' | sed 's/ $//')"
+
+# an unusable ledger folder: started with a warning, not refused
+reset; mkdir -p "$t/ro"; chmod 500 "$t/ro"
+GO_WIDE_STATE=$t/ro/state mj 1; check "unwritable ledger folder: started" 0 $?
+grep -q 'without admission control' "$t/err"; check "...with a warning" 0 $?
+chmod 700 "$t/ro"
+# a bad MEMJOB_WAIT falls back to the default instead of waiting forever
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-9-1-1.scope $((3*1073741824))"
+MEMJOB_WAIT=abc mj 3; check "bad MEMJOB_WAIT: default wait, then refused" 75 $?
 
 # if budget fails, the job starts without admission control, with a warning
 reset; mv "$t/bin/budget" "$t/bin/budget.real"; printf '#!/bin/sh\nexit 1\n' >"$t/bin/budget"; chmod +x "$t/bin/budget"

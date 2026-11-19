@@ -27,46 +27,53 @@ PROC=${GO_WIDE_PROC:-/proc}
 pstart() { sed 's/.*) //' "$PROC/$1/stat" 2>/dev/null | awk '{print $20}'; }
 me=$$ st=$(pstart $$)
 unit=memjob-${root:-0}-$kind$me-$st.scope
-bytes=$(awk -v g="$lim" 'BEGIN { printf "%d", g*1073741824 }')
+bytes=$(awk -v g="$lim" 'BEGIN { printf "%.0f", g*1073741824 }')
 STATE=${GO_WIDE_STATE:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/go-wide}
-wait_max=${MEMJOB_WAIT:-20}
+wait_max=${MEMJOB_WAIT:-20}; case "$wait_max" in ''|*[!0-9]*) wait_max=20 ;; esac
 
 # admit: under the lock, drop dead entries, then claim if the limit fits. Prints
-# "<verdict> <free> <ceiling>", verdict ok, wait (a want is recorded), refuse or nolock.
-# It runs in a subshell that alone holds fd 9, so the job never inherits the lock.
+# "<verdict> <free> <ceiling>", verdict ok, wait (a want is recorded), refuse or nolock
+# (ledger or budget unusable). It runs in a subshell that alone holds fd 9, so the job
+# never inherits the lock. A failed write never replaces the ledger.
 admit() (
   mkdir -p "$STATE" 2>/dev/null
-  { exec 9>>"$STATE/ledger.lock"; } 2>/dev/null || { echo nolock; exit; }
+  # a failing redirection on exec would end the subshell before "|| nolock" runs
+  ( : >>"$STATE/ledger.lock" ) 2>/dev/null || { echo nolock; exit; }
+  exec 9>>"$STATE/ledger.lock"
   flock -w 30 9 || { echo nolock; exit; }
-  [ -f "$STATE/ledger" ] || echo "version 1" >"$STATE/ledger"
+  [ -f "$STATE/ledger" ] || echo "version 1" >"$STATE/ledger" || { echo nolock; exit; }
   # keep the version line and live entries (pid running with the same start time)
   tmp=$STATE/ledger.$$
   while read -r line; do
     case "$line" in claim\ *|want\ *) set -- $line; [ "$(pstart "$2")" = "$3" ] || continue ;; esac
     echo "$line"
-  done <"$STATE/ledger" >"$tmp"
-  mv "$tmp" "$STATE/ledger"
+  done <"$STATE/ledger" >"$tmp" && mv "$tmp" "$STATE/ledger" || { rm -f "$tmp"; echo nolock; exit; }
+  FREE='' CEILING=''
   eval "$("$S/budget" 2>/dev/null | grep -E '^(FREE|CEILING)=')"
   # budget failed: admit without control (as before the ledger existed), and say so
-  case "$FREE$CEILING" in ''|*[!0-9.]*) echo "nolock"; exit ;; esac
-  # the oldest live want of another process: its memory is held for it
-  hb=$(awk -v me="$me" '$1=="want" && $2!=me {print $5, $4}' "$STATE/ledger" | sort -n | head -1)
-  hb=${hb#* }; [ -n "$hb" ] || hb=0
-  verdict=$(awk -v b="$bytes" -v f="${FREE:-0}" -v c="${CEILING:-0}" -v hb="$hb" 'BEGIN {
-    g=1073741824; if (b > c*g) print "refuse"; else if (b <= f*g - hb) print "ok"; else print "wait" }')
-  awk -v me="$me" '!($1=="want" && $2==me)' "$STATE/ledger" >"$tmp"
-  case "$verdict" in
-    ok) echo "claim $me $st $unit $bytes" >>"$tmp" ;;
-    wait) since=$(awk -v me="$me" '$1=="want" && $2==me {print $5; exit}' "$STATE/ledger")
-      echo "want $me $st $bytes ${since:-$(date +%s)}" >>"$tmp" ;;
-  esac
-  mv "$tmp" "$STATE/ledger"
-  echo "$verdict ${FREE:-?} ${CEILING:-?}"
+  case "$FREE" in ''|*[!0-9.]*) echo nolock; exit ;; esac
+  case "$CEILING" in ''|*[!0-9.]*) echo nolock; exit ;; esac
+  # memory held for jobs that have been waiting longer than this one (first come, first
+  # served; ties broken by start time, then pid). This one's place: its own want, or now.
+  mine=$(awk -v me="$me" '$1=="want" && $2==me {print $5, $3, $2; exit}' "$STATE/ledger")
+  [ -n "$mine" ] || mine="$(date +%s) $st $me"
+  held=$(awk -v me="$me" -v mine="$mine" 'BEGIN { split(mine, m, " ") }
+    $1=="want" && $2!=me && ($5<m[1] || ($5==m[1] && ($3<m[2] || ($3==m[2] && $2<m[3])))) { h+=$4 }
+    END { printf "%.0f", h }' "$STATE/ledger")
+  verdict=$(awk -v b="$bytes" -v f="$FREE" -v c="$CEILING" -v h="$held" 'BEGIN {
+    g=1073741824; if (b > c*g) print "refuse"; else if (b <= f*g - h) print "ok"; else print "wait" }')
+  { awk -v me="$me" '!($1=="want" && $2==me)' "$STATE/ledger"
+    case "$verdict" in
+      ok) echo "claim $me $st $unit $bytes" ;;
+      wait) echo "want $me $st $bytes ${mine%% *}" ;;
+    esac; } >"$tmp" && mv "$tmp" "$STATE/ledger" || { rm -f "$tmp"; echo nolock; exit; }
+  echo "$verdict $FREE $CEILING"
 )
 withdraw() (   # remove this process's want (on giving up)
-  { exec 9>>"$STATE/ledger.lock"; } 2>/dev/null && flock -w 30 9 || exit 0
+  ( : >>"$STATE/ledger.lock" ) 2>/dev/null || exit 0
+  exec 9>>"$STATE/ledger.lock"; flock -w 30 9 || exit 0
   awk -v me="$me" '!($1=="want" && $2==me)' "$STATE/ledger" >"$STATE/ledger.$$" &&
-    mv "$STATE/ledger.$$" "$STATE/ledger"
+    mv "$STATE/ledger.$$" "$STATE/ledger" || rm -f "$STATE/ledger.$$"
 )
 
 if command -v flock >/dev/null; then
@@ -74,10 +81,12 @@ if command -v flock >/dev/null; then
   while :; do
     r=$(admit); v=${r%% *}; r=${r#* }; free=${r%% *}; ceil=${r#* }
     case "$v" in
-      ok|nolock) break ;;
+      ok) break ;;
+      wait) ;;
       refuse) withdraw
         echo "memjob: refused: $lim GiB is more than could ever be free here ($ceil GiB with no memjobs running); use a smaller limit" >&2
         exit 75 ;;
+      *) v=nolock; break ;;   # nolock, or admit died: start as before the ledger existed
     esac
     now=$(date +%s)
     if [ $((now - t0)) -ge "$wait_max" ]; then
@@ -89,6 +98,8 @@ if command -v flock >/dev/null; then
     sleep 2
   done
   [ "$v" = nolock ] && echo "memjob: ledger unavailable; starting without admission control" >&2
+else
+  echo "memjob: flock not found; starting without admission control" >&2
 fi
 exec systemd-run --user --scope -q --collect --unit="$unit" \
   -p MemoryMax="${lim}G" -p MemorySwapMax=0 choom -n 1000 -- "$@"

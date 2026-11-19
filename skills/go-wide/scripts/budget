@@ -109,7 +109,8 @@ awk -v t="$total" -v a="$avail" -v pct="$FLOOR_PCT" -v cores="$cores" -v n="$ses
   free=a-pr-cl-floor-2.5   # 2.5 = stay above the WARNING level
   jb=int((free-wa)/n); if (jb<0) jb=0
   printf "TOTAL=%.1f\nAVAILABLE=%.1f\nFLOOR=%.1f\nCAP=%d\nJOB_BUDGET=%d\nSESSIONS=%d\n", t, a, floor, cap, jb, n
-  printf "FREE=%.2f\nCEILING=%.2f\n", (free>0 ? free : 0), a+held-floor-2.5
+  ceil=a+held-floor-2.5
+  printf "FREE=%.2f\nCEILING=%.2f\n", (free>0 ? free : 0), (ceil>0 ? ceil : 0)
   printf "WARN_AVAIL=%.1f\nCRIT_AVAIL=%.1f\nRECOVER_AVAIL=%.1f\n", floor+2.5, floor+0.5, floor+4.5
   printf "WARN_SCOPE=%.1f\nCRIT_SCOPE=%.1f\nMAX_JOBS=%d\n", cap*0.83, cap*0.94, cores
 }'
