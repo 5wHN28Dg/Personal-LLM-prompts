@@ -184,6 +184,14 @@ MEMJOB_WAIT=1 mj 1; check "fair share with several sessions holding memory" 0 $?
 reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $((2*G))"
 check "budget's RESERVED per session" "\"777:$((2*G))\"" "$("$t/bin/budget" | sed -n 's/^RESERVED=//p')"
 
+# without the user manager (e.g. another pid namespace) the ledger is left untouched, even an
+# entry whose pid looks dead from here
+reset; printf 'version 1\nclaim 999999 1 memjob-9-1-1.scope 1\n' >"$t/state/ledger"; cp "$t/state/ledger" "$t/before"
+printf '#!/bin/sh\nexit 1\n' >"$t/bin/systemctl"; chmod +x "$t/bin/systemctl"
+mj 1; grep -q 'user manager unreachable' "$t/err"; check "no user manager: says so" 0 $?
+check "...and leaves the ledger alone" same "$(cmp -s "$t/before" "$t/state/ledger" && echo same || echo changed)"
+rm "$t/bin/systemctl"
+
 # if budget fails, the job starts without admission control, with a warning
 reset; mv "$t/bin/budget" "$t/bin/budget.real"; printf '#!/bin/sh\nexit 1\n' >"$t/bin/budget"; chmod +x "$t/bin/budget"
 mj 3; check "budget failing: started anyway" 0 $?

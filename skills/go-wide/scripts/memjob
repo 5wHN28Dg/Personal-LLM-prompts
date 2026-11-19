@@ -120,7 +120,13 @@ withdraw() (   # remove this process's want (on giving up)
     mv "$STATE/ledger.$$" "$STATE/ledger" || rm -f "$STATE/ledger.$$"
 )
 
-if command -v flock >/dev/null; then
+# A memjob that can't reach the systemd user manager can't start a job anyway (systemd-run
+# will fail with its own error). It must not touch the ledger either: from another pid
+# namespace (a sandbox or container sharing XDG_RUNTIME_DIR) every other session's pid looks
+# dead, so pruning would delete their live claims.
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+  echo "memjob: systemd user manager unreachable; not using the ledger" >&2
+elif command -v flock >/dev/null; then
   t0=$(clock) said=0
   while :; do
     left=$((wait_max - ($(clock) - t0))); lw=5; [ "$left" -lt 5 ] && lw=$((left > 1 ? left : 1))
