@@ -2,4 +2,6 @@
 
 Project kind: do the work (not a passion project).
 
-Tests: `TMPDIR=~/.cache/agent-tmp sh skills/go-wide/tests/test-budget` checks the go-wide memory budget arithmetic.
+Tests, after changing the go-wide scripts:
+- `TMPDIR=~/.cache/agent-tmp sh skills/go-wide/tests/test-budget` checks the memory budget arithmetic against fake cgroups.
+- `sh skills/go-wide/tests/test-capagent` needs a systemd user session and only touches a throwaway process tree.
