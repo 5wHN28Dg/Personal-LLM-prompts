@@ -88,6 +88,7 @@ if [ -r "$STATE/ledger" ]; then
     d=$(find "$CG/user.slice" -maxdepth 5 -type d -name "$x" 2>/dev/null | head -1)
     m=$([ -n "$d" ] && cat "$d/memory.max" 2>/dev/null)
     o=${x#memjob-}; o=${o%%-*}   # the owning session, from memjob-<session>-...
+    case "$o" in ''|*[!0-9]*) o=0 ;; esac
     case "$m" in ''|max|*[!0-9]*) claimed=$((claimed + bytes)) clres="$clres $o:$bytes" ;; esac
   done <"$STATE/ledger"
 fi
@@ -102,7 +103,8 @@ jobs=$(find "$CG/user.slice" -maxdepth 5 -type d -name 'memjob-*.scope' 2>/dev/n
       sh=$(awk '$1=="shmem" {print $2}' "$d/memory.stat" 2>/dev/null) ;;
     *) age=0 sh=0 ;;   # builds and tests: may still grow to their whole limit
   esac
-  o=${d##*/}; o=${o#memjob-}; case "$o" in *-*) o=${o%%-*} ;; *) o=none ;; esac
+  o=${d##*/}; o=${o#memjob-}; case "$o" in *-*) o=${o%%-*} ;; *) o=0 ;; esac
+  case "$o" in ''|*[!0-9]*) o=0 ;; esac   # no owner in the name: session 0
   echo "$m ${u:--1} $age ${sh:-0} $o"
   done | awk '{ m=$1; u=$2+0; grow=m
     if (u<0) u=0   # unreadable use: keep the whole limit reserved

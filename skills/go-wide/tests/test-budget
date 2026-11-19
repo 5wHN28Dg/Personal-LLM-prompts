@@ -124,6 +124,13 @@ check "memjob with no limit" 6 "$(jb)"
 setup; job memjob-9-long-1 $((8*GiB)) 0 3600; : >"$t/cg/user.slice/app.slice/memjob-9-long-1.scope/memory.stat"
 check "old --long memjob with unreadable use" 2 "$(jb)"
 
+# RESERVED per session from running scopes: 555 has a 2 GiB job and an aged --long job using
+# 1 GiB of 4 (may grow to 1.5); an old-style unit with no owner counts as session 0
+reset_res() { setup; job memjob-555-1-1 $((2*GiB)) 0 60; job memjob-555-long-2-2 $((4*GiB)) $((1*GiB)) 3600; job memjob-7 $GiB 0 60; }
+reset_res; r=$(PATH=$t/bin:$PATH STUB_UNITS=$t/units STUB_MONO=90000 GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_PROC=$t/proc \
+  GO_WIDE_MEMINFO=$t/meminfo GO_WIDE_STATE=$t/state STUB_SESSIONS=101 "$t/bin/budget" | sed -n 's/^RESERVED=//p' | tr -d '"' | tr ' ' '\n' | sort | tr '\n' ' ')
+check "RESERVED from running scopes" "0:$GiB 555:$((2*GiB + 3*GiB/2)) " "$r"
+
 # memjob --long names the unit memjob-<owner>-long-<n>, which budget recognizes and from which
 # memwatch's owner parsing (memjob-<owner>-...) still gets the owner; without --long, no "long".
 # systemd-run is stubbed to print its arguments, so nothing is started.

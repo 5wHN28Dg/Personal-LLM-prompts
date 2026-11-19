@@ -57,8 +57,11 @@ admit() (
   FREE='' CEILING=''
   # one floor for every session: a caller's FLOOR_PCT may raise it, never lower it
   fp=${FLOOR_PCT:-20}; case "$fp" in ''|*[!0-9]*) fp=20 ;; esac; [ "$fp" -lt 20 ] && fp=20
-  RESERVED=''
-  eval "$(FLOOR_PCT=$fp "$S/budget" 2>/dev/null | grep -E '^(FREE|CEILING|RESERVED)=')"
+  # parsed, never eval'd: the values come partly from the ledger
+  out=$(FLOOR_PCT=$fp "$S/budget" 2>/dev/null)
+  FREE=$(echo "$out" | sed -n 's/^FREE=//p') CEILING=$(echo "$out" | sed -n 's/^CEILING=//p')
+  RESERVED=$(echo "$out" | sed -n 's/^RESERVED="\(.*\)"$/\1/p')
+  case "$RESERVED" in *[!0-9:\ ]*) RESERVED='' ;; esac   # malformed: no fair sharing, still safe
   # budget failed: admit without control (as before the ledger existed), and say so
   case "$FREE" in ''|*[!0-9.]*) echo nolock; exit ;; esac
   case "$CEILING" in ''|*[!0-9.]*) echo nolock; exit ;; esac
@@ -75,19 +78,26 @@ admit() (
       -v now="$now" -v free="$FREE" -v res="$RESERVED" '
     BEGIN { g=1073741824; k=split(res, r, " "); for (i=1; i<=k; i++) { split(r[i], f, ":"); R[f[1]]=f[2] }
             n=0 }
-    $1=="want" { w++; P[w]=$2; S[w]=$3; B[w]=$4; T[w]=$5; X[w]=($6=="" ? "p" $2 : $6) }
+    function older(j, i) {   # j arrived before i: by arrival, then start time, then pid
+      return T[j]<T[i] || (T[j]==T[i] && (S[j]<S[i] || (S[j]==S[i] && P[j]<P[i]))) }
+    $1=="want" && $2!=me { w++; P[w]=$2; S[w]=$3; B[w]=$4; T[w]=$5; X[w]=($6=="" ? "p" $2 : $6) }
     END {
       w++; P[w]=me; S[w]=st; B[w]=b; T[w]=since; X[w]=sess   # this job, as if waiting
       for (o in R) if (R[o]>0) A[o]=1
       for (i=1; i<=w; i++) A[X[i]]=1
       tot=free*g; for (o in A) { n++; tot+=R[o] }
       fair=tot/n
-      for (i=1; i<=w; i++) C[i]=(now-T[i]>=10 ? 0 : (R[X[i]]+B[i]<=fair ? 1 : 2))
+      # a job is within the fair share of its session if the reserve of the session plus
+      # this job and the older waiting jobs of the same session fit in it; a job never ranks
+      # better than an older job of its own session, so the order stays consistent
+      for (i=1; i<=w; i++) { cum=B[i]
+        for (j=1; j<=w; j++) if (j!=i && X[j]==X[i] && older(j, i)) cum+=B[j]
+        D[i]=(now-T[i]>=10 ? 0 : (R[X[i]]+cum<=fair ? 1 : 2)) }
+      for (i=1; i<=w; i++) { C[i]=D[i]
+        for (j=1; j<=w; j++) if (j!=i && X[j]==X[i] && older(j, i) && D[j]>C[i]) C[i]=D[j] }
       for (i=1; i<w; i++) {
-        if (P[i]==me) continue
-        older=(T[i]<T[w] || (T[i]==T[w] && (S[i]<S[w] || (S[i]==S[w] && P[i]<P[w]))))
         # within one session, oldest first; between sessions, by priority, then oldest
-        if (X[i]==X[w] ? older : (C[i]<C[w] || (C[i]==C[w] && older))) h+=B[i]
+        if (X[i]==X[w] ? older(i, w) : (C[i]<C[w] || (C[i]==C[w] && older(i, w)))) h+=B[i]
       }
       printf "%.0f", h }' "$STATE/ledger")
   verdict=$(awk -v b="$bytes" -v f="$FREE" -v c="$CEILING" -v h="$held" 'BEGIN {
