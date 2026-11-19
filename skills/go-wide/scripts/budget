@@ -16,17 +16,17 @@ FLOOR_PCT=${FLOOR_PCT:-20}
 CG=${GO_WIDE_CGROUP_ROOT:-/sys/fs/cgroup}
 read_kb() { awk -v k="$1:" '$1==k {print $2}' "${GO_WIDE_MEMINFO:-/proc/meminfo}"; }
 total=$(read_kb MemTotal) avail=$(read_kb MemAvailable)
-if [ -r $CG/memory.max ] && [ -r $CG/memory.current ] && [ "$(cat $CG/memory.max)" != max ]; then
+if [ -r "$CG/memory.max" ] && [ -r "$CG/memory.current" ] && [ "$(cat "$CG/memory.max")" != max ]; then
   # container (cgroup namespace root): page cache that can be dropped doesn't count as used
-  inact=$(awk '$1=="inactive_file" {print $2}' $CG/memory.stat 2>/dev/null)
-  lim=$(( $(cat $CG/memory.max) / 1024 )); used=$(( ($(cat $CG/memory.current) - ${inact:-0}) / 1024 ))
+  inact=$(awk '$1=="inactive_file" {print $2}' "$CG/memory.stat" 2>/dev/null)
+  lim=$(( $(cat "$CG/memory.max") / 1024 )); used=$(( ($(cat "$CG/memory.current") - ${inact:-0}) / 1024 ))
   [ "$lim" -lt "$total" ] && total=$lim
   [ $((lim - used)) -lt "$avail" ] && avail=$((lim - used))
 fi
 [ "$1" = --available ] && { awk -v a="$avail" 'BEGIN{printf "%.1f\n", a/1048576}'; exit 0; }
 cores=$(nproc)
-if [ -r $CG/cpu.max ]; then
-  set -- $(cat $CG/cpu.max)
+if [ -r "$CG/cpu.max" ]; then
+  set -- $(cat "$CG/cpu.max")
   [ "$1" != max ] && { q=$(( ($1 + $2 - 1) / $2 )); [ "$q" -lt "$cores" ] && cores=$q; }
 fi
 S=$(cd "$(dirname "$0")" && pwd)
@@ -39,12 +39,14 @@ case "$live" in *" $me "*) ;; *) [ -n "$me" ] && sessions=$((sessions+1)) ;; esa
 # memory already promised to running memjobs but not used yet. The scope folder is created
 # when the job starts, so its modification time is the job's start time.
 now=$(date +%s)
-promised=$(for d in $(find $CG/user.slice -maxdepth 5 -type d -name 'memjob-*.scope' 2>/dev/null); do
+promised=$(find "$CG/user.slice" -maxdepth 5 -type d -name 'memjob-*.scope' 2>/dev/null | while read -r d; do
   # anon = memory the job really holds; its page cache already counts as available
-  m=$(cat $d/memory.max 2>/dev/null); [ -n "$m" ] && [ "$m" != max ] &&
-    echo "$m $(awk '$1=="anon" {print $2}' $d/memory.stat 2>/dev/null) $((now - $(stat -c %Y $d 2>/dev/null || echo $now)))"
+  m=$(cat "$d/memory.max" 2>/dev/null); [ -n "$m" ] && [ "$m" != max ] || continue
+  u=$(awk '$1=="anon" {print $2}' "$d/memory.stat" 2>/dev/null)
+  echo "$m ${u:--1} $((now - $(stat -c %Y "$d" 2>/dev/null || echo "$now")))"
   done | awk '{ m=$1; u=$2+0; grow=m
-    if ($3 >= 600) { grow=1.5*u; if (grow<536870912) grow=536870912; if (grow>m) grow=m }
+    if (u<0) u=0   # unreadable use: keep the whole limit reserved
+    else if ($3 >= 600) { grow=1.5*u; if (grow<536870912) grow=536870912; if (grow>m) grow=m }
     if (grow>u) s+=grow-u } END { printf "%d", s/1024 }')
 awk -v t="$total" -v a="$avail" -v pct="$FLOOR_PCT" -v cores="$cores" -v n="$sessions" -v pr="${promised:-0}" 'BEGIN {
   t/=1048576; a/=1048576; pr/=1048576; floor=t*pct/100

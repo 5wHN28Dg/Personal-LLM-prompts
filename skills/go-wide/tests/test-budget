@@ -22,10 +22,10 @@ job() {
   echo "$2" >"$d/memory.max"; printf 'anon %d\nfile 0\n' "$3" >"$d/memory.stat"
   touch -d "@$(( $(date +%s) - $4 ))" "$d"
 }
-jb() {
-  GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_MEMINFO=$t/meminfo STUB_SESSIONS="101 102" \
-    "$t/bin/budget" | sed -n 's/^JOB_BUDGET=//p'
+jb1() {  # uses $STUB_SESSIONS as set by the caller
+  GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_MEMINFO=$t/meminfo "$t/bin/budget" | sed -n 's/^JOB_BUDGET=//p'
 }
+jb() { STUB_SESSIONS="101 102"; export STUB_SESSIONS; jb1; }
 check() {  # check <description> <expected> <actual>
   if [ "$2" = "$3" ]; then echo "ok   $1 (JOB_BUDGET=$3)"
   else echo "FAIL $1: expected JOB_BUDGET=$2, got $3"; fail=1; fi
@@ -48,12 +48,29 @@ check "young memjobs keep full reservation" 0 "$(jb)"
 setup; job memjob-9-1 $((4*GiB)) $((3584*MiB)) 3600
 check "long-running memjob near its limit" 6 "$(jb)"
 
-# a long-running job using 2 GiB of 8 GiB: 1.5 x 2 = 3, so 1 GiB is promised, not 6:
-# (23.2 - 1 - 7.5 - 2.5) / 2 = 6.1
-setup; job memjob-9-1 $((8*GiB)) $((2*GiB)) 3600
-check "long-running memjob grows to 1.5 x anon" 6 "$(jb)"
-# ...and the same job when young promises all 6 GiB: (23.2 - 6 - 7.5 - 2.5) / 2 = 3.6
-setup; job memjob-9-1 $((8*GiB)) $((2*GiB)) 60
-check "young memjob promises its whole headroom" 3 "$(jb)"
+# a long-running job using 4 GiB of 8 GiB grows to 1.5 x 4 = 6, so 2 GiB is promised
+# (not 6, nor a flat 0.5): (23.2 - 2 - 7.5 - 2.5) / 2 = 5.6
+setup; job memjob-9-1 $((8*GiB)) $((4*GiB)) 3600
+check "long-running memjob grows to 1.5 x anon" 5 "$(jb)"
+# with one session the same job gives 11.2: 11
+setup; job memjob-9-1 $((8*GiB)) $((4*GiB)) 3600
+check "one session, long-running memjob" 11 "$(STUB_SESSIONS=101; export STUB_SESSIONS; jb1)"
+# ...and the same job when young promises all 4 GiB: (23.2 - 4 - 7.5 - 2.5) / 2 = 4.6
+setup; job memjob-9-1 $((8*GiB)) $((4*GiB)) 60
+check "young memjob promises its whole headroom" 4 "$(jb)"
+
+# the 10-minute boundary: 9 minutes is young, 11 minutes is old
+setup; job memjob-9-1 $((8*GiB)) $((4*GiB)) 540
+check "memjob at 9 minutes is young" 4 "$(jb)"
+setup; job memjob-9-1 $((8*GiB)) $((4*GiB)) 660
+check "memjob at 11 minutes is old" 5 "$(jb)"
+
+# a memjob without a limit is skipped
+setup; job memjob-9-1 max $((4*GiB)) 3600
+check "memjob with no limit" 6 "$(jb)"
+
+# an old job whose memory use can't be read keeps its whole limit: (23.2 - 8 - 10) / 2 = 2.6
+setup; job memjob-9-1 $((8*GiB)) 0 3600; : >"$t/cg/user.slice/app.slice/memjob-9-1.scope/memory.stat"
+check "old memjob with unreadable use" 2 "$(jb)"
 
 exit $fail
