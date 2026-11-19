@@ -8,23 +8,33 @@ mkdir "$t/bin"
 cp "$here/../scripts/budget" "$t/bin/budget"
 printf '#!/bin/sh\nprintf "%%s\\n" $STUB_SESSIONS\n' >"$t/bin/sessions"
 printf '#!/bin/sh\nexit 1\n' >"$t/bin/findagent"
+# clocks: boot clock (with suspend) at 100000 s, monotonic clock (without) at 90000 s
+printf '#!/bin/sh\n[ -n "$STUB_MONO" ] && echo "$STUB_MONO" || exit 1\n' >"$t/bin/python3"
+printf '#!/bin/sh\neval u=\\${$#}; cat "$STUB_UNITS/$u" 2>/dev/null\n' >"$t/bin/systemctl"   # job start (monotonic)
 chmod +x "$t/bin/"*
 fail=0 GiB=1073741824 MiB=1048576
 
 # machine like the one in the report: 37.5 GiB total, 23.2 GiB available
 setup() {
-  rm -rf "$t/cg"; mkdir -p "$t/cg/user.slice/app.slice"
+  rm -rf "$t/cg" "$t/proc" "$t/units"; mkdir -p "$t/cg/user.slice/app.slice" "$t/proc" "$t/units"
+  echo "100000.00 0.00" >"$t/proc/uptime"; pid=100
   printf 'MemTotal: %d kB\nMemAvailable: %d kB\n' 39321600 24326963 >"$t/meminfo"
 }
-# job <name> <limit bytes> <anon bytes> <age seconds> [shmem bytes]
+# job <name> <limit bytes> <anon bytes> <age seconds> [shmem bytes] [process age on the boot clock]
+# The age is how long the job has run while awake; the process age defaults to the same.
+# Wall-clock times (the folder's and cgroup.type's) are set far in the past: they must not count.
 job() {
-  d=$t/cg/user.slice/app.slice/$1.scope; mkdir -p "$d"
+  d=$t/cg/user.slice/app.slice/$1.scope; mkdir -p "$d"; pid=$((pid+1))
   echo "$2" >"$d/memory.max"; printf 'anon %d\nfile %d\nshmem %d\n' "$3" "${5:-0}" "${5:-0}" >"$d/memory.stat"
-  # the job's start time; the folder itself gets a fresh time, as when the parent enables a controller
-  touch -d "@$(( $(date +%s) - $4 ))" "$d/cgroup.type"
+  echo "$pid" >"$d/cgroup.procs"; mkdir -p "$t/proc/$pid"
+  hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
+  echo "$pid (sleep a) S 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 $(( (100000 - ${6:-$4}) * hz )) 0 0" >"$t/proc/$pid/stat"
+  echo "$(( (90000 - $4) * 1000000 ))" >"$t/units/$1.scope"
+  touch -d @1000 "$d/cgroup.type" "$d"
 }
 jb1() {  # uses $STUB_SESSIONS as set by the caller
-  GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_MEMINFO=$t/meminfo "$t/bin/budget" | sed -n 's/^JOB_BUDGET=//p'
+  PATH=$t/bin:$PATH STUB_UNITS=$t/units STUB_MONO=${STUB_MONO-90000} \
+    GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_PROC=$t/proc GO_WIDE_MEMINFO=$t/meminfo "$t/bin/budget" | sed -n 's/^JOB_BUDGET=//p'
 }
 jb() { STUB_SESSIONS="101 102"; export STUB_SESSIONS; jb1; }
 check() {  # check <description> <expected> <actual>
@@ -77,9 +87,34 @@ check "--long memjob at 9 minutes is young" 4 "$(jb)"
 setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 660
 check "--long memjob at 11 minutes is old" 5 "$(jb)"
 
-# an old --long job without cgroup.type (cgroup v1, kernels before 4.14) counts as young
-setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600; rm "$t/cg/user.slice/app.slice/memjob-9-long-1.scope/cgroup.type"
-check "--long memjob with no cgroup.type is young" 4 "$(jb)"
+# suspend: started 2 minutes before a 2-hour suspend, so 2 hours on the boot clock but
+# 2 minutes awake: young, whole 4 GiB promised: (23.2 - 4 - 10) / 2 = 4.6
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 120 0 7320
+check "--long memjob just before a suspend is young" 4 "$(jb)"
+# a server restarted inside the job a minute ago is young again, though the job is an hour old
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600 0 60
+check "--long memjob restarted inside its scope is young" 4 "$(jb)"
+# the newest of several processes counts: an old one and one restarted a minute ago
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600; d=$t/cg/user.slice/app.slice/memjob-9-long-1.scope
+mkdir -p "$t/proc/555"; echo "555 (a) b) c) S 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 $(( (100000 - 60) * hz )) 0 0" >"$t/proc/555/stat"
+echo 555 >>"$d/cgroup.procs"
+check "newest process counts (comm with parentheses)" 4 "$(jb)"
+# ...also when it sits in a sub-group created inside the scope
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600; d=$t/cg/user.slice/app.slice/memjob-9-long-1.scope
+mkdir -p "$t/proc/556" "$d/sub"; echo "556 (srv) S 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 $(( (100000 - 60) * hz )) 0 0" >"$t/proc/556/stat"
+echo 556 >"$d/sub/cgroup.procs"
+check "newest process in a sub-group counts" 4 "$(jb)"
+# a process that started after the clock was read (negative age) counts as young
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600 0 -5
+check "process newer than the clock reading: young" 4 "$(jb)"
+# without a monotonic clock (no python3) or the job's start from systemd, it counts as young
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600
+check "no monotonic clock: young" 4 "$(STUB_MONO=; jb)"
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600; rm "$t/units/memjob-9-long-1.scope"
+check "no start time from systemd: young" 4 "$(jb)"
+# a job whose processes can't be read (exited between the reads) counts as young
+setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600; rm -r "$t/proc/101"
+check "unreadable process: young" 4 "$(jb)"
 
 # a memjob without a limit is skipped
 setup; job memjob-9-long-1 max $((4*GiB)) 3600
