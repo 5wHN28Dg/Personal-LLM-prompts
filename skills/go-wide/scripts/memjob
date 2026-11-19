@@ -29,6 +29,40 @@ esac
 pstart() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'; }
 # the boot clock never steps back, unlike the wall clock
 clock() { awk '{print int($1)}' /proc/uptime; }
+CG=${GO_WIDE_CGROUP_ROOT:-/sys/fs/cgroup}
+# live <kind> <pid> <start> <ns> <time> <unit>: is a ledger entry live? Entries carry the pid
+# namespace that wrote them (ns=) and when (t=, boot clock); a claim's are on its "meta" line,
+# so readers from older versions, which parse claim lines by position, aren't affected. A pid
+# only means something in its own namespace. Entries from another namespace (a sandbox or
+# container sharing XDG_RUNTIME_DIR) are kept while their job's cgroup exists; otherwise a
+# claim lasts 60 s and a want 120 s from its time (a want refreshes it while waiting). A time
+# in the future means another clock (a container's): expired. No ns: written here.
+myns=$(readlink /proc/self/ns/pid 2>/dev/null | tr -dc 0-9)
+live() {
+  case "$3" in ''|*[!0-9]*) return 1 ;; esac   # malformed
+  if [ -z "$4" ] || [ "$4" = "$myns" ]; then [ "$(pstart "$2")" = "$3" ]; return; fi
+  case "$6" in *[*?[]*) ;; memjob-*.scope)
+    [ -n "$(find "$CG/user.slice" -maxdepth 5 -type d -name "$6" 2>/dev/null | head -1)" ] && return 0 ;; esac
+  case "$5" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" = want ] && ttl=120 || ttl=60
+  age=$(( $(awk '{print int($1)}' /proc/uptime) - $5 ))
+  [ "$age" -ge 0 ] && [ "$age" -lt "$ttl" ]
+}
+# entry_live <ledger line, with a claim's meta appended>: unpack it and call live
+entry_live() {
+  set -f; set -- $1; set +f
+  k=$1 p=$2 s=$3 ns='' tm='' u=''
+  for f; do case "$f" in ns=*) ns=${f#ns=} ;; t=*) tm=${f#t=} ;; esac; done
+  [ "$k" = claim ] && u=$4
+  [ "$k" = want ] && [ -z "$tm" ] && tm=$5
+  live "$k" "$p" "$s" "$ns" "$tm" "$u"
+}
+# merged <ledger>: the ledger with each claim's meta appended to it, meta lines dropped
+merged() {
+  awk 'NR==FNR { if ($1=="meta") m[$2" "$3]=$4" "$5; next }
+    $1=="meta" { next }
+    $1=="claim" && (($2" "$3) in m) { print $0, m[$2" "$3]; next } { print }' "$1" "$1"
+}
 me=$$ st=$(pstart $$) session=${root:-0}
 unit=memjob-${root:-0}-$kind$me-$st.scope
 bytes=$(awk -v g="$lim" 'BEGIN { printf "%.0f", g*1073741824 }')
@@ -49,12 +83,17 @@ admit() (
   [ -f "$STATE/ledger" ] || echo "version 1" >"$STATE/ledger" || { echo nolock; exit; }
   # keep the version line and live entries (pid running with the same start time)
   tmp=$STATE/ledger.$$
+  merged "$STATE/ledger" >"$tmp.in" || { rm -f "$tmp.in"; echo nolock; exit; }
   while read -r line || [ -n "$line" ]; do
-    case "$line" in claim\ *|want\ *) set -- $line
-      case "$3" in ''|*[!0-9]*) continue ;; esac   # malformed
-      [ "$(pstart "$2")" = "$3" ] || continue ;; esac
+    case "$line" in
+      claim\ *) entry_live "$line" || continue
+        # write the claim back in its old shape, its tags on a meta line
+        set -f; set -- $line; set +f; echo "$1 $2 $3 $4 $5"; p=$2 s=$3; shift 5
+        [ $# -gt 0 ] && echo "meta $p $s $*"; continue ;;
+      want\ *) entry_live "$line" || continue ;;
+    esac
     echo "$line"
-  done <"$STATE/ledger" >"$tmp" && mv "$tmp" "$STATE/ledger" || { rm -f "$tmp"; echo nolock; exit; }
+  done <"$tmp.in" >"$tmp" && rm -f "$tmp.in" && mv "$tmp" "$STATE/ledger" || { rm -f "$tmp" "$tmp.in"; echo nolock; exit; }
   FREE='' CEILING=''
   # one floor for every session: a caller's FLOOR_PCT may raise it, never lower it
   fp=${FLOOR_PCT:-20}; case "$fp" in ''|*[!0-9]*) fp=20 ;; esac; [ "$fp" -lt 20 ] && fp=20
@@ -108,8 +147,8 @@ admit() (
     g=1073741824; if (b > c*g) print "refuse"; else if (b <= f*g - h) print "ok"; else print "wait" }')
   { awk -v me="$me" '!($1=="want" && $2==me)' "$STATE/ledger"
     case "$verdict" in
-      ok) echo "claim $me $st $unit $bytes" ;;
-      wait) echo "want $me $st $bytes ${mine:-$now} $session" ;;
+      ok) echo "claim $me $st $unit $bytes"; echo "meta $me $st ns=$myns t=$now" ;;
+      wait) echo "want $me $st $bytes ${mine:-$now} $session ns=$myns t=$now" ;;
     esac; } >"$tmp" && mv "$tmp" "$STATE/ledger" || { rm -f "$tmp"; echo nolock; exit; }
   echo "$verdict $FREE $CEILING $(awk -v h="$held" 'BEGIN { printf "%.2f", h/1073741824 }')"
 )
