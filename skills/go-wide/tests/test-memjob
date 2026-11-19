@@ -127,13 +127,62 @@ printf '#!/bin/sh\necho $(( $(/bin/date +%%s) - 3600 ))\n' >"$t/bin/date"; chmod
 s0=$(awk '{print int($1)}' /proc/uptime); MEMJOB_WAIT=3 mj 3; r=$?
 s1=$(awk '{print int($1)}' /proc/uptime); rm "$t/bin/date"
 check "clock stepped back: wait still ends" "75 short" "$r $([ $((s1 - s0)) -le 12 ] && echo short || echo long)"
-grep -q 'held for jobs waiting longer' "$t/err"; check "refusal says how much is held for others" 0 $?
+grep -q 'held for jobs ahead of it' "$t/err"; check "refusal says how much is held for others" 0 $?
 
 # hand-edited ledger: a last line without a newline is kept, a malformed claim is dropped
 reset; sleep 60 & p=$!; pids=$p; st=$(sed 's/.*) //' /proc/$p/stat | awk '{print $20}')
 printf 'version 1\nclaim 4000000\n\njunk\nclaim %s %s memjob-9-1-1.scope %s' $p $st $((3*1073741824)) >"$t/state/ledger"
 MEMJOB_WAIT=1 mj 1; check "claim on an unterminated last line still counts" 75 $?
 grep -q '^claim 4000000' "$t/state/ledger"; check "malformed claim dropped" 1 $?
+
+# fair sharing between sessions. This test's own session is the one memjob will use.
+cg=$(cut -d: -f3 /proc/self/cgroup); ME=0
+case "$cg" in *-capped-*.scope) ME=${cg##*-capped-}; ME=${ME%.scope}; kill -0 "$ME" 2>/dev/null || ME=0 ;; esac
+G=1073741824; now() { awk '{print int($1)}' /proc/uptime; }
+# session 777 holds 2 GiB (FREE 1.5) and waits for 1 GiB more; this session holds nothing.
+# Fair share: (1.5 + 2) / 2 = 1.75. 777 would go to 3 (over), this session to 1 (under):
+# this job goes first, though 777's want is older
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $((2*G))"
+holder want "$G $(( $(now) - 2 )) 777"
+MEMJOB_WAIT=1 mj 1; check "under-share session goes before an over-share one's older want" 0 $?
+# the other way round: this session holds the 2 GiB and 777 waits for 1: 777 goes first
+# (777's want is newer than this job, so first come, first served alone would start this one)
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-$ME-1-1.scope $((2*G))"
+holder want "$G $(( $(now) + 5 )) 777"
+MEMJOB_WAIT=1 mj 1; check "over-share session waits for a newer under-share one" 75 $?
+# once a want has waited 10 s it goes first, whatever the shares
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $((2*G))"
+holder want "$G $(( $(now) - 15 )) 777"
+MEMJOB_WAIT=1 mj 1; check "a want waiting 10 s goes first, whatever the shares" 75 $?
+# a session's jobs never form a loop: 777 waits for 2 GiB (older) and then 1 GiB, session 888
+# holds 2 GiB (FREE 1.5), fair share (1.5 + 2) / 3 = 1.17. This 1 GiB job is the only one
+# within its share; 777's second job must not rank above it by skipping 777's first
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-888-1-1.scope $((2*G))"
+holder want "$((2*G)) $(( $(now) - 3 )) 777"; holder want "$G $(( $(now) - 2 )) 777"
+MEMJOB_WAIT=1 mj 1; check "no ordering loop: the under-share job starts" 0 $?
+# an old-format want (no session field) counts as its own session; once it has waited 10 s
+# it is served first like any other
+reset; echo "version 1" >"$t/state/ledger"; holder want "$((3*G)) $(( $(now) - 15 ))"
+MEMJOB_WAIT=1 mj 1; check "old-format want is still served in turn" 75 $?
+# a crafted session name in the ledger can't run code or switch admission off
+reset; echo "version 1" >"$t/state/ledger"; holder claim 'memjob-$(touch${IFS}'"$t"'/pwned)-1-1.scope '"$((3*G))"
+MEMJOB_WAIT=1 mj 1; check "crafted ledger line: still admission-controlled" 75 $?
+check "...and nothing ran" no "$([ -e "$t/pwned" ] && echo yes || echo no)"
+
+# memory isn't held for a newer job ahead by priority that can't start yet: 777 (holding
+# nothing) waits for 1.6 GiB, but only 1.5 is free while this session holds 2 GiB
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-$ME-1-1.scope $((2*G))"
+holder want "$((16*G/10)) $(( $(now) + 5 )) 777"
+MEMJOB_WAIT=3 mj 1; check "no memory held for a job that can't start yet" 0 $?
+# several sessions with reserves: 777 holds 1, 888 holds 1 (FREE 1.5, fair (1.5+2)/3 = 1.17);
+# 777 waits for 1 more (would be at 2, over); this session's 1 GiB (at 1, under) goes first
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $G"; holder claim "memjob-888-1-1.scope $G"
+holder want "$G $(( $(now) - 2 )) 777"
+MEMJOB_WAIT=1 mj 1; check "fair share with several sessions holding memory" 0 $?
+
+# budget reports each session's reserve
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-777-1-1.scope $((2*G))"
+check "budget's RESERVED per session" "\"777:$((2*G))\"" "$("$t/bin/budget" | sed -n 's/^RESERVED=//p')"
 
 # if budget fails, the job starts without admission control, with a warning
 reset; mv "$t/bin/budget" "$t/bin/budget.real"; printf '#!/bin/sh\nexit 1\n' >"$t/bin/budget"; chmod +x "$t/bin/budget"
