@@ -9,9 +9,9 @@
 #               memjobs may still grow into, minus floor and a margin, split evenly across
 #               the live go-wide sessions on this machine (SESSIONS). 0 = start nothing.
 #               A memjob may grow to its whole limit, except a long-running one (started
-#               with memjob --long: a dev server, an emulator) that is older than 10 minutes:
-#               it is expected to grow to at most 1.5 times what it holds now or its past
-#               peak, whichever is larger, at least 512 MiB, never above its limit.
+#               with memjob --long, such as a dev server) that is older than 10 minutes: it is
+#               expected to grow to at most 1.5 times what it holds now, at least 512 MiB,
+#               never above its limit.
 # GO_WIDE_CGROUP_ROOT and GO_WIDE_MEMINFO replace /sys/fs/cgroup and /proc/meminfo (tests).
 FLOOR_PCT=${FLOOR_PCT:-20}
 CG=${GO_WIDE_CGROUP_ROOT:-/sys/fs/cgroup}
@@ -45,15 +45,13 @@ promised=$(find "$CG/user.slice" -maxdepth 5 -type d -name 'memjob-*.scope' 2>/d
   m=$(cat "$d/memory.max" 2>/dev/null); [ -n "$m" ] && [ "$m" != max ] || continue
   u=$(awk '$1=="anon" {print $2}' "$d/memory.stat" 2>/dev/null)
   case ${d##*/} in
-    memjob-*-long-*.scope) age=$((now - $(stat -c %Y "$d" 2>/dev/null || echo "$now")))
-      peak=$(cat "$d/memory.peak" 2>/dev/null) ;;   # no memory.peak before Linux 5.19
-    *) age=0 peak=0 ;;   # builds and tests: may still grow to their whole limit
+    memjob-*-long-*.scope) age=$((now - $(stat -c %Y "$d" 2>/dev/null || echo "$now"))) ;;
+    *) age=0 ;;   # builds and tests: may still grow to their whole limit
   esac
-  echo "$m ${u:--1} $age ${peak:-0}"
+  echo "$m ${u:--1} $age"
   done | awk '{ m=$1; u=$2+0; grow=m
     if (u<0) u=0   # unreadable use: keep the whole limit reserved
-    else if ($3 >= 600) { grow=1.5*u; if (grow<$4+0) grow=$4+0
-      if (grow<536870912) grow=536870912; if (grow>m) grow=m }
+    else if ($3 >= 600) { grow=1.5*u; if (grow<536870912) grow=536870912; if (grow>m) grow=m }
     if (grow>u) s+=grow-u } END { printf "%d", s/1024 }')
 awk -v t="$total" -v a="$avail" -v pct="$FLOOR_PCT" -v cores="$cores" -v n="$sessions" -v pr="${promised:-0}" 'BEGIN {
   t/=1048576; a/=1048576; pr/=1048576; floor=t*pct/100

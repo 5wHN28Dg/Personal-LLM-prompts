@@ -1,6 +1,6 @@
 #!/bin/sh
 # usage: memjob [--long] <GiB> <command...>: run in its own capped, kill-first group.
-# --long marks a long-running process (dev server, emulator back end) whose use stays flat:
+# --long marks a long-running process (a dev server) whose memory use stays flat:
 # after 10 minutes, budget stops reserving its whole limit. Never use it for builds or tests.
 # The unit is named memjob-<agent pid>-<n> (memjob-<agent pid>-long-<n> with --long), so this
 # session's watcher stops only its own jobs.

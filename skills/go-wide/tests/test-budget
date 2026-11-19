@@ -16,11 +16,10 @@ setup() {
   rm -rf "$t/cg"; mkdir -p "$t/cg/user.slice/app.slice"
   printf 'MemTotal: %d kB\nMemAvailable: %d kB\n' 39321600 24326963 >"$t/meminfo"
 }
-# job <name> <limit bytes> <anon bytes> <age seconds> [peak bytes]
+# job <name> <limit bytes> <anon bytes> <age seconds>
 job() {
   d=$t/cg/user.slice/app.slice/$1.scope; mkdir -p "$d"
   echo "$2" >"$d/memory.max"; printf 'anon %d\nfile 0\n' "$3" >"$d/memory.stat"
-  [ -n "$5" ] && echo "$5" >"$d/memory.peak"
   touch -d "@$(( $(date +%s) - $4 ))" "$d"
 }
 jb1() {  # uses $STUB_SESSIONS as set by the caller
@@ -65,11 +64,6 @@ check "one session, --long memjob" 11 "$(STUB_SESSIONS=101; export STUB_SESSIONS
 setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 60
 check "young --long memjob promises its whole headroom" 4 "$(jb)"
 
-# a --long job that once peaked at 7.5 GiB keeps room for that peak: 3.5 GiB promised,
-# (23.2 - 3.5 - 10) / 2 = 4.85
-setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 3600 $((7680*MiB))
-check "--long memjob keeps room for its past peak" 4 "$(jb)"
-
 # the 10-minute boundary: 9 minutes is young, 11 minutes is old
 setup; job memjob-9-long-1 $((8*GiB)) $((4*GiB)) 540
 check "--long memjob at 9 minutes is young" 4 "$(jb)"
@@ -83,5 +77,24 @@ check "memjob with no limit" 6 "$(jb)"
 # an old --long job whose memory use can't be read keeps its whole limit: (23.2 - 8 - 10) / 2 = 2.6
 setup; job memjob-9-long-1 $((8*GiB)) 0 3600; : >"$t/cg/user.slice/app.slice/memjob-9-long-1.scope/memory.stat"
 check "old --long memjob with unreadable use" 2 "$(jb)"
+
+# memjob --long names the unit memjob-<owner>-long-<n>, which budget recognizes and from which
+# memwatch's owner parsing (memjob-<owner>-...) still gets the owner; without --long, no "long".
+# systemd-run is stubbed to print its arguments, so nothing is started.
+cp "$here/../scripts/memjob" "$t/bin/memjob"
+printf '#!/bin/sh\nprintf "%%s\\n" "$@"\n' >"$t/bin/systemd-run"; chmod +x "$t/bin/systemd-run"
+unit() { PATH=$t/bin:$PATH "$t/bin/memjob" "$@" | sed -n 's/^--unit=//p'; }
+# the owner is this shell's agent (from its cgroup, or 0 when there is none), so any number
+u=$(unit --long 0.5 true); o=${u#memjob-}; o=${o%%-*}
+case "$u" in memjob-*-long-[0-9]*) echo "ok   memjob --long unit name ($u)" ;;
+  *) echo "FAIL memjob --long unit name: got '$u'"; fail=1 ;; esac
+case "$o" in ''|*[!0-9]*) echo "FAIL owner from --long unit name: got '$o'"; fail=1 ;;
+  *) echo "ok   owner from --long unit name ($o)" ;; esac
+u=$(unit 2 true)
+case "$u" in *long*) echo "FAIL memjob unit name: got '$u'"; fail=1 ;;
+  memjob-[0-9]*-[0-9]*) echo "ok   memjob unit name ($u)" ;;
+  *) echo "FAIL memjob unit name: got '$u'"; fail=1 ;; esac
+lim=$(PATH=$t/bin:$PATH "$t/bin/memjob" --long 0.5 true | grep -c '^MemoryMax=0.5G$')
+[ "$lim" = 1 ] && echo "ok   memjob --long passes the limit" || { echo "FAIL memjob --long limit"; fail=1; }
 
 exit $fail
