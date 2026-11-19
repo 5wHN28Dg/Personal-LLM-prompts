@@ -59,7 +59,7 @@ hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
 mono=$(python3 -c 'import time; print(int(time.monotonic()))' 2>/dev/null)
 long_age() {
   # every process of the job, including any in sub-groups a process created inside the scope
-  newest=$(for p in $(find "$1" -name cgroup.procs -exec cat {} + 2>/dev/null); do
+  newest=$(find "$1" -name cgroup.procs -exec cat {} + 2>/dev/null | while read -r p; do
     sed 's/.*) //' "$PROC/$p/stat" 2>/dev/null | awk '{print $20}'; done | sort -n | tail -1)
   start=$(systemctl --user show -p ActiveEnterTimestampMonotonic --value "${1##*/}" 2>/dev/null)
   for v in "$newest" "$up" "$mono" "$start"; do   # anything unknown: young
@@ -72,11 +72,13 @@ long_age() {
 # the ledger: "claim <pid> <start> <unit> <bytes>" and "want <pid> <start> <bytes> <since>";
 # an entry is live while its pid runs with the same start time (field 22 of its stat)
 STATE=${GO_WIDE_STATE:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/go-wide}
-pstart() { sed 's/.*) //' "$PROC/$1/stat" 2>/dev/null | awk '{print $20}'; }
+# (always the real /proc: a test hook must not make other sessions' claims look dead)
+pstart() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'; }
 claimed=0 wanted=0
 if [ -r "$STATE/ledger" ]; then
   while read -r kind pid st x bytes; do
     [ "$kind" = claim ] || [ "$kind" = want ] || continue
+    case "$st" in ''|*[!0-9]*) continue ;; esac                   # malformed
     [ -n "$pid" ] && [ "$(pstart "$pid")" = "$st" ] || continue   # dead or reused pid
     if [ "$kind" = want ]; then wanted=$((wanted + x)); continue; fi
     # a job whose cgroup already has its limit is counted from the cgroup below

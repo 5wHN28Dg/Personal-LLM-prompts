@@ -11,7 +11,7 @@ Scripts: the `scripts/` folder next to this `SKILL.md` (called `$S` below). Reso
 
 ## 1. Budget, cap and watcher (do first)
 
-1. Run `$S/budget`. It derives everything from this machine: `FLOOR` (RAM always left free; default 20% of total, override with `FLOOR_PCT=<n>`), `CAP` (the fixed ceiling for this session's own processes: total minus floor), `JOB_BUDGET` (memory you may give memjobs right now, split across the `SESSIONS` of go-wide running on this machine), alert levels and `MAX_JOBS` (core count). Tell the user the numbers in one line.
+1. Run `$S/budget`. It derives everything from this machine: `FLOOR` (RAM always left free; default 20% of total; `FLOOR_PCT=<n>` changes it here, but memjob's admission never uses less than 20%, so one session can't loosen the check for all), `CAP` (the fixed ceiling for this session's own processes: total minus floor), `JOB_BUDGET` (memory you may give memjobs right now, split across the `SESSIONS` of go-wide running on this machine), alert levels and `MAX_JOBS` (core count). Tell the user the numbers in one line.
 2. Run `$S/capself`. It finds this agent's process tree (any terminal agent, or an editor bridge such as Zed's `*-acp`), moves it, while it keeps running, into a capped group of `CAP` GiB, and starts a background watcher bound to this session. No restart is needed and no context is lost.
    - "could not find the agent process": rerun with `AGENT_MATCH=<your agent's executable name>`, or `AGENT_ROOT_PID=<pid>`.
    - Exit 2 (no systemd user manager or cgroup v2, e.g. macOS or a container): you are in **watch-only mode**. Skip `memjob`, use half the usual parallelism, and check `$S/budget --available` before starting each heavy command.

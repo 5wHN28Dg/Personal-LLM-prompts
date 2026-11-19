@@ -15,6 +15,8 @@ cat >"$t/bin/systemd-run" <<'STUB'
 #!/bin/sh
 for a; do case "$a" in --unit=*) echo "${a#--unit=}" >>"$JOBLOG" ;; esac; done
 [ -n "$NAME" ] && echo "start $NAME" >>"$JOBLOG"
+while [ $# -gt 0 ] && [ "$1" != -- ]; do shift; done; [ $# -gt 0 ] && shift   # the command after "choom ... --"
+for a; do echo "arg <$a>"; done >>"$JOBLOG"
 if flock -n "$GO_WIDE_STATE/ledger.lock" true; then echo "lock free" >>"$JOBLOG"; else echo "lock held" >>"$JOBLOG"; fi
 sleep "${JOB_SECS:-0}"
 STUB
@@ -33,7 +35,7 @@ holder() { sleep 60 & p=$!; pids="$pids $p"
 
 reset; mj 3; check "fits: started" 0 $?
 check "fits: claim written" 1 "$(ledger claim)"
-check "the job doesn't hold the lock" "lock free" "$(sed -n 2p "$JOBLOG")"
+check "the job doesn't hold the lock" "lock free" "$(grep "^lock " "$JOBLOG")"
 case "$(head -1 "$JOBLOG")" in memjob-*-[0-9]*-[0-9]*.scope) r=named ;; *) r="$(head -1 "$JOBLOG")" ;; esac
 check "unit name has pid and start time" named "$r"
 
@@ -103,6 +105,35 @@ chmod 700 "$t/ro"
 # a bad MEMJOB_WAIT falls back to the default instead of waiting forever
 reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-9-1-1.scope $((3*1073741824))"
 MEMJOB_WAIT=abc mj 3; check "bad MEMJOB_WAIT: default wait, then refused" 75 $?
+
+# the command and its arguments reach the job unchanged
+reset; "$t/bin/memjob" 1 printf '%s' 'a b' "c" 2>/dev/null
+check "command arguments kept" "arg <printf> arg <%s> arg <a b> arg <c>" "$(grep '^arg' "$JOBLOG" | tr '\n' ' ' | sed 's/ $//')"
+
+# a busy lock is waited for, never a reason to start unchecked: held 8 s, MEMJOB_WAIT=3
+reset; flock "$t/state/ledger.lock" sleep 8 & pids=$!; sleep 0.5
+MEMJOB_WAIT=3 mj 1; check "lock held too long: refused, not started" 75 $?
+grep -q 'stayed locked' "$t/err"; check "...saying why" 0 $?
+# ...and if it's freed in time, the job starts
+reset; flock "$t/state/ledger.lock" sleep 2 & pids=$!; sleep 0.5
+MEMJOB_WAIT=10 mj 1; check "lock freed in time: started" 0 $?
+
+# FLOOR_PCT can't loosen admission: with floor 0 FREE would be 5.5 GiB, but 4 GiB is refused
+reset; FLOOR_PCT=0 MEMJOB_WAIT=1 mj 4; check "FLOOR_PCT below 20 doesn't loosen admission" 75 $?
+
+# the wait uses the boot clock: a wall clock stepped back an hour doesn't stretch it
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-9-1-1.scope $((3*1073741824))"
+printf '#!/bin/sh\necho $(( $(/bin/date +%%s) - 3600 ))\n' >"$t/bin/date"; chmod +x "$t/bin/date"
+s0=$(awk '{print int($1)}' /proc/uptime); MEMJOB_WAIT=3 mj 3; r=$?
+s1=$(awk '{print int($1)}' /proc/uptime); rm "$t/bin/date"
+check "clock stepped back: wait still ends" "75 short" "$r $([ $((s1 - s0)) -le 12 ] && echo short || echo long)"
+grep -q 'held for jobs waiting longer' "$t/err"; check "refusal says how much is held for others" 0 $?
+
+# hand-edited ledger: a last line without a newline is kept, a malformed claim is dropped
+reset; sleep 60 & p=$!; pids=$p; st=$(sed 's/.*) //' /proc/$p/stat | awk '{print $20}')
+printf 'version 1\nclaim 4000000\n\njunk\nclaim %s %s memjob-9-1-1.scope %s' $p $st $((3*1073741824)) >"$t/state/ledger"
+MEMJOB_WAIT=1 mj 1; check "claim on an unterminated last line still counts" 75 $?
+grep -q '^claim 4000000' "$t/state/ledger"; check "malformed claim dropped" 1 $?
 
 # if budget fails, the job starts without admission control, with a warning
 reset; mv "$t/bin/budget" "$t/bin/budget.real"; printf '#!/bin/sh\nexit 1\n' >"$t/bin/budget"; chmod +x "$t/bin/budget"
