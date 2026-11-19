@@ -13,8 +13,10 @@
 #               minutes: it is expected to grow to at most 1.5 times what it holds now
 #               (anon plus shared memory), at least 512 MiB, never above its limit.
 #               Its age is the time the machine was awake since the job's newest process
-#               started, so a suspend, a clock change or a server restarted inside the job
-#               don't make it look older. Where that can't be measured, it counts as young.
+#               started, so a suspend, a clock change or a server restarted inside the job as
+#               a new process don't make it look older (one that re-execs itself in place
+#               does keep its age). A server that keeps starting new processes (recycled
+#               workers) stays young. Where the age can't be measured, the job is young.
 # GO_WIDE_CGROUP_ROOT and GO_WIDE_PROC replace /sys/fs/cgroup and /proc (tests);
 # GO_WIDE_MEMINFO replaces /proc/meminfo.
 FLOOR_PCT=${FLOOR_PCT:-20}
@@ -44,7 +46,7 @@ case "$live" in *" $me "*) ;; *) [ -n "$me" ] && sessions=$((sessions+1)) ;; esa
 [ "$sessions" -ge 1 ] || sessions=1
 # A --long job's age in seconds (0 = young), the smaller of two clocks, neither the wall clock:
 # - since its newest process started, on the boot clock (counts suspend): a server
-#   restarted inside the job is young again;
+#   restarted inside the job as a new process is young again;
 # - since systemd started the job, on the monotonic clock (stops during suspend). The shell
 #   can't read that clock, so python3 does; without it every job counts as young.
 up=$(awk '{print int($1)}' "$PROC/uptime" 2>/dev/null)
