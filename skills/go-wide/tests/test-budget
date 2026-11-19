@@ -34,7 +34,7 @@ job() {
 }
 jb1() {  # uses $STUB_SESSIONS as set by the caller
   PATH=$t/bin:$PATH STUB_UNITS=$t/units STUB_MONO=${STUB_MONO-90000} \
-    GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_PROC=$t/proc GO_WIDE_MEMINFO=$t/meminfo "$t/bin/budget" | sed -n 's/^JOB_BUDGET=//p'
+    GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_PROC=$t/proc GO_WIDE_MEMINFO=$t/meminfo GO_WIDE_STATE=$t/state "$t/bin/budget" | sed -n 's/^JOB_BUDGET=//p'
 }
 jb() { STUB_SESSIONS="101 102"; export STUB_SESSIONS; jb1; }
 check() {  # check <description> <expected> <actual>
@@ -129,7 +129,7 @@ check "old --long memjob with unreadable use" 2 "$(jb)"
 # systemd-run is stubbed to print its arguments, so nothing is started.
 cp "$here/../scripts/memjob" "$t/bin/memjob"
 printf '#!/bin/sh\nprintf "%%s\\n" "$@"\n' >"$t/bin/systemd-run"; chmod +x "$t/bin/systemd-run"
-unit() { PATH=$t/bin:$PATH "$t/bin/memjob" "$@" | sed -n 's/^--unit=//p'; }
+unit() { PATH=$t/bin:$PATH GO_WIDE_STATE=$t/state "$t/bin/memjob" "$@" | sed -n 's/^--unit=//p'; }
 # the owner is this shell's agent (from its cgroup, or 0 when there is none), so any number
 u=$(unit --long 0.5 true); o=${u#memjob-}; o=${o%%-*}
 case "$u" in memjob-*-long-[0-9]*) echo "ok   memjob --long unit name ($u)" ;;
@@ -140,7 +140,7 @@ u=$(unit 2 true)
 case "$u" in *long*) echo "FAIL memjob unit name: got '$u'"; fail=1 ;;
   memjob-[0-9]*-[0-9]*) echo "ok   memjob unit name ($u)" ;;
   *) echo "FAIL memjob unit name: got '$u'"; fail=1 ;; esac
-lim=$(PATH=$t/bin:$PATH "$t/bin/memjob" --long 0.5 true | grep -c '^MemoryMax=0.5G$')
+lim=$(PATH=$t/bin:$PATH GO_WIDE_STATE=$t/state "$t/bin/memjob" --long 0.5 true | grep -c '^MemoryMax=0.5G$')
 [ "$lim" = 1 ] && echo "ok   memjob --long passes the limit" || { echo "FAIL memjob --long limit"; fail=1; }
 
 exit $fail

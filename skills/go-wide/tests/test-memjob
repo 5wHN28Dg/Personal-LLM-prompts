@@ -1,0 +1,83 @@
+#!/bin/sh
+# usage: test-memjob: check memjob's admission through the shared ledger. Uses fake meminfo
+# and cgroups for budget, a private ledger folder, and a stub systemd-run that runs nothing
+# real: it records its arguments and keeps the memjob's pid alive for a while, as a job would.
+here=$(cd "$(dirname "$0")" && pwd)
+t=$(mktemp -d "${TMPDIR:-/tmp}/go-wide-test.XXXXXX") || exit 1
+pids=
+trap 'kill $pids 2>/dev/null; rm -rf "$t"' EXIT
+mkdir -p "$t/bin" "$t/state" "$t/cg/user.slice"
+for f in memjob budget; do cp "$here/../scripts/$f" "$t/bin/"; done
+printf '#!/bin/sh\necho 101\n' >"$t/bin/sessions"
+printf '#!/bin/sh\nexit 1\n' >"$t/bin/findagent"
+# the job: note the unit and whether it holds the ledger lock, then live for $JOB_SECS seconds
+cat >"$t/bin/systemd-run" <<'STUB'
+#!/bin/sh
+for a; do case "$a" in --unit=*) echo "${a#--unit=}" >>"$JOBLOG" ;; esac; done
+if flock -n "$GO_WIDE_STATE/ledger.lock" true; then echo "lock free" >>"$JOBLOG"; else echo "lock held" >>"$JOBLOG"; fi
+sleep "${JOB_SECS:-0}"
+STUB
+chmod +x "$t/bin/"*
+# machine: 10 GiB total, 8 GiB available: floor 2, margin 2.5, so FREE = 3.5 GiB, CEILING 3.5
+printf 'MemTotal: %d kB\nMemAvailable: %d kB\n' 10485760 8388608 >"$t/meminfo"
+export PATH="$t/bin:$PATH" GO_WIDE_STATE=$t/state GO_WIDE_CGROUP_ROOT=$t/cg GO_WIDE_MEMINFO=$t/meminfo JOBLOG=$t/jobs
+fail=0
+check() { if [ "$2" = "$3" ]; then echo "ok   $1 ($3)"; else echo "FAIL $1: expected $2, got $3"; fail=1; fi; }
+mj() { "$t/bin/memjob" "$@" true 2>"$t/err"; }
+ledger() { grep -c "^$1 " "$t/state/ledger"; }
+reset() { rm -f "$t/state/ledger" "$JOBLOG"; kill $pids 2>/dev/null; wait 2>/dev/null; pids=; }
+# a live process with its real start time, to hold a claim or a want in the ledger
+holder() { sleep 60 & p=$!; pids="$pids $p"
+  echo "$1 $p $(sed 's/.*) //' /proc/$p/stat | awk '{print $20}') $2" >>"$t/state/ledger"; }
+
+reset; mj 3; check "fits: started" 0 $?
+check "fits: claim written" 1 "$(ledger claim)"
+check "the job doesn't hold the lock" "lock free" "$(sed -n 2p "$JOBLOG")"
+case "$(head -1 "$JOBLOG")" in memjob-*-[0-9]*-[0-9]*.scope) r=named ;; *) r="$(head -1 "$JOBLOG")" ;; esac
+check "unit name has pid and start time" named "$r"
+
+reset; mj 4; check "more than could ever be free: refused" 75 $?
+check "...at once, nothing started" 0 "$(cat "$JOBLOG" 2>/dev/null | wc -l)"
+grep -q 'more than could ever be free' "$t/err"; check "...with a message" 0 $?
+
+# another job's live claim of 2 GiB leaves 1.5: a 3 GiB job waits, then gives up
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-9-1-1.scope $((2*1073741824))"
+MEMJOB_WAIT=3 mj 3; check "claimed memory isn't free: refused after waiting" 75 $?
+grep -q 'not free after 3 s' "$t/err"; check "...with a message" 0 $?
+check "...and its want withdrawn" 0 "$(ledger want)"
+# a claim whose process has exited is dropped
+reset; echo "version 1" >"$t/state/ledger"; holder claim "memjob-9-1-1.scope $((2*1073741824))"
+kill $pids; wait 2>/dev/null
+mj 3; check "dead claim dropped: started" 0 $?
+check "...and removed from the ledger" 1 "$(ledger claim)"
+# a claim with the right pid but another start time (pid reused) is dropped too
+reset; sleep 60 & p=$!; pids=$p; printf 'version 1\nclaim %s 1 memjob-9-1-1.scope %s\n' $p $((2*1073741824)) >"$t/state/ledger"
+mj 3; check "reused pid's claim dropped" 0 $?
+
+# the oldest waiting job has its memory held: with a 2 GiB want waiting, 2 GiB jobs wait,
+# 1.5 GiB ones pass (3.5 - 2 = 1.5)
+reset; echo "version 1" >"$t/state/ledger"; holder want "$((2*1073741824)) 1"
+MEMJOB_WAIT=1 mj 2; check "head of line holds its memory: later job waits" 75 $?
+mj 1.5; check "...a job that fits beside it starts" 0 $?
+
+# two memjobs at once with room for one: exactly one starts, the other is refused
+reset; ( export MEMJOB_WAIT=1 JOB_SECS=4; mj 2 & mj 2 & wait ) 2>/dev/null
+check "two at once, room for one: one started, the other refused" 1 "$(grep -c '^memjob-' "$JOBLOG")"
+# while the job runs its claim counts, so budget shows less FREE
+reset; JOB_SECS=3 "$t/bin/memjob" 3 true 2>/dev/null & pids=$!; sleep 1
+check "budget counts a running job's claim" 0.50 "$("$t/bin/budget" | sed -n 's/^FREE=//p')"
+wait
+# a claimed job whose cgroup exists but has no limit yet still counts in full
+reset; mkdir -p "$t/cg/user.slice/app.slice/memjob-9-1-1.scope"; echo max >"$t/cg/user.slice/app.slice/memjob-9-1-1.scope/memory.max"
+echo "version 1" >"$t/state/ledger"; holder claim "memjob-9-1-1.scope $((2*1073741824))"
+check "claim counts until its cgroup has a limit" 1.50 "$("$t/bin/budget" | sed -n 's/^FREE=//p')"
+rm -r "$t/cg/user.slice/app.slice"
+
+# if budget fails, the job starts without admission control, with a warning
+reset; mv "$t/bin/budget" "$t/bin/budget.real"; printf '#!/bin/sh\nexit 1\n' >"$t/bin/budget"; chmod +x "$t/bin/budget"
+mj 3; check "budget failing: started anyway" 0 $?
+grep -q 'without admission control' "$t/err"; check "...with a warning" 0 $?
+mv "$t/bin/budget.real" "$t/bin/budget"
+
+reset; mj x; check "bad limit: usage error" 2 $?
+exit $fail

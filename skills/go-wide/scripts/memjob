@@ -2,19 +2,93 @@
 # usage: memjob [--long] <GiB> <command...>: run in its own capped, kill-first group.
 # --long marks a long-running server that doesn't rebuild and whose memory use stays flat:
 # after 10 minutes, budget stops reserving its whole limit. Never use it for builds or tests.
-# The unit is named memjob-<agent pid>-<n> (memjob-<agent pid>-long-<n> with --long), so this
-# session's watcher stops only its own jobs.
-# The agent pid comes from this process's cgroup (agent-capped-<pid>.scope), which every
-# process the agent starts inherits, even if it's orphaned; findagent is the fallback when
-# there's no such scope or its agent has exited.
+# The unit is named memjob-<agent pid>-[long-]<pid>-<start>, so this session's watcher stops
+# only its own jobs (the agent pid comes from this process's agent-capped-<pid>.scope, which
+# every process the agent starts inherits; findagent is the fallback).
+#
+# Admission: before starting, memjob claims its limit in a ledger shared by every go-wide
+# session on the machine ($XDG_RUNTIME_DIR/go-wide/ledger), under one lock, against the
+# machine's FREE memory from budget, so two sessions can never both take the same memory.
+# The claim lasts as long as this process (systemd-run --scope keeps its pid). If the limit
+# doesn't fit, memjob waits in line, up to MEMJOB_WAIT seconds (default 20); the oldest
+# waiting job has its memory held for it, so smaller later jobs can't starve it. Exit 75:
+# refused (not free in time, or more than could ever be free); nothing was started.
 S=$(cd "$(dirname "$0")" && pwd)
 kind=; [ "$1" = --long ] && { kind=long-; shift; }
 lim=$1; shift
+case "$lim" in ''|*[!0-9.]*|.|*.*.*) echo "usage: memjob [--long] <GiB> <command...>" >&2; exit 2 ;; esac
 cg=$(cut -d: -f3 /proc/self/cgroup)
 case "$cg" in
   *-capped-*.scope) root=${cg##*-capped-}; root=${root%.scope}
     kill -0 "$root" 2>/dev/null || root= ;;   # the scope's agent has exited
 esac
 [ -n "$root" ] || root=$("$S/findagent" "$PPID" 2>/dev/null)
-exec systemd-run --user --scope -q --collect --unit="memjob-${root:-0}-$kind$$" \
+PROC=${GO_WIDE_PROC:-/proc}
+pstart() { sed 's/.*) //' "$PROC/$1/stat" 2>/dev/null | awk '{print $20}'; }
+me=$$ st=$(pstart $$)
+unit=memjob-${root:-0}-$kind$me-$st.scope
+bytes=$(awk -v g="$lim" 'BEGIN { printf "%d", g*1073741824 }')
+STATE=${GO_WIDE_STATE:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/go-wide}
+wait_max=${MEMJOB_WAIT:-20}
+
+# admit: under the lock, drop dead entries, then claim if the limit fits. Prints
+# "<verdict> <free> <ceiling>", verdict ok, wait (a want is recorded), refuse or nolock.
+# It runs in a subshell that alone holds fd 9, so the job never inherits the lock.
+admit() (
+  mkdir -p "$STATE" 2>/dev/null
+  { exec 9>>"$STATE/ledger.lock"; } 2>/dev/null || { echo nolock; exit; }
+  flock -w 30 9 || { echo nolock; exit; }
+  [ -f "$STATE/ledger" ] || echo "version 1" >"$STATE/ledger"
+  # keep the version line and live entries (pid running with the same start time)
+  tmp=$STATE/ledger.$$
+  while read -r line; do
+    case "$line" in claim\ *|want\ *) set -- $line; [ "$(pstart "$2")" = "$3" ] || continue ;; esac
+    echo "$line"
+  done <"$STATE/ledger" >"$tmp"
+  mv "$tmp" "$STATE/ledger"
+  eval "$("$S/budget" 2>/dev/null | grep -E '^(FREE|CEILING)=')"
+  # budget failed: admit without control (as before the ledger existed), and say so
+  case "$FREE$CEILING" in ''|*[!0-9.]*) echo "nolock"; exit ;; esac
+  # the oldest live want of another process: its memory is held for it
+  hb=$(awk -v me="$me" '$1=="want" && $2!=me {print $5, $4}' "$STATE/ledger" | sort -n | head -1)
+  hb=${hb#* }; [ -n "$hb" ] || hb=0
+  verdict=$(awk -v b="$bytes" -v f="${FREE:-0}" -v c="${CEILING:-0}" -v hb="$hb" 'BEGIN {
+    g=1073741824; if (b > c*g) print "refuse"; else if (b <= f*g - hb) print "ok"; else print "wait" }')
+  awk -v me="$me" '!($1=="want" && $2==me)' "$STATE/ledger" >"$tmp"
+  case "$verdict" in
+    ok) echo "claim $me $st $unit $bytes" >>"$tmp" ;;
+    wait) since=$(awk -v me="$me" '$1=="want" && $2==me {print $5; exit}' "$STATE/ledger")
+      echo "want $me $st $bytes ${since:-$(date +%s)}" >>"$tmp" ;;
+  esac
+  mv "$tmp" "$STATE/ledger"
+  echo "$verdict ${FREE:-?} ${CEILING:-?}"
+)
+withdraw() (   # remove this process's want (on giving up)
+  { exec 9>>"$STATE/ledger.lock"; } 2>/dev/null && flock -w 30 9 || exit 0
+  awk -v me="$me" '!($1=="want" && $2==me)' "$STATE/ledger" >"$STATE/ledger.$$" &&
+    mv "$STATE/ledger.$$" "$STATE/ledger"
+)
+
+if command -v flock >/dev/null; then
+  t0=$(date +%s) said=0
+  while :; do
+    r=$(admit); v=${r%% *}; r=${r#* }; free=${r%% *}; ceil=${r#* }
+    case "$v" in
+      ok|nolock) break ;;
+      refuse) withdraw
+        echo "memjob: refused: $lim GiB is more than could ever be free here ($ceil GiB with no memjobs running); use a smaller limit" >&2
+        exit 75 ;;
+    esac
+    now=$(date +%s)
+    if [ $((now - t0)) -ge "$wait_max" ]; then
+      withdraw
+      echo "memjob: refused: $lim GiB not free after $wait_max s (free now $free GiB); retry later, use a smaller limit, or raise MEMJOB_WAIT" >&2
+      exit 75
+    fi
+    [ $((now - said)) -ge 10 ] && { echo "memjob: waiting for $lim GiB (free $free GiB)" >&2; said=$now; }
+    sleep 2
+  done
+  [ "$v" = nolock ] && echo "memjob: ledger unavailable; starting without admission control" >&2
+fi
+exec systemd-run --user --scope -q --collect --unit="$unit" \
   -p MemoryMax="${lim}G" -p MemorySwapMax=0 choom -n 1000 -- "$@"
